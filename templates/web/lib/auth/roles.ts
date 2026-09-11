@@ -39,13 +39,11 @@ import type { Role } from '@/db/schema';
  *
  * Wrapped in React's cache() so duplicate calls within a single render dedupe.
  */
-export const hasRole = cache(
-  async (clerkUserId: string, role: Role): Promise<boolean> => {
-    const row = await getUserRoleByClerkId(getDb(), clerkUserId);
-    const effective = row?.role ?? 'free';
-    return effective === role;
-  },
-);
+export const hasRole = cache(async (clerkUserId: string, role: Role): Promise<boolean> => {
+  const row = await getUserRoleByClerkId(getDb(), clerkUserId);
+  const effective = row?.role ?? 'free';
+  return effective === role;
+});
 
 /**
  * Check whether the currently-signed-in user has the given role. Calls

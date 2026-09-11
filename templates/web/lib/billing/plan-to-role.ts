@@ -29,7 +29,9 @@ export function planToRole(planKey: string | null | undefined): Role {
       // keep the user at the lowest privilege level. Sanitize the key
       // before logging so a crafted webhook payload can't smuggle control
       // characters, ANSI escapes, or unbounded data into log pipelines.
-      const safeKey = String(planKey).replace(/[^\w.-]/g, '?').slice(0, 40);
+      const safeKey = String(planKey)
+        .replace(/[^\w.-]/g, '?')
+        .slice(0, 40);
       console.warn('[plan-to-role] unknown plan key, defaulting to free:', safeKey);
       return 'free';
     }

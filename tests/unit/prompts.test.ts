@@ -125,9 +125,7 @@ describe('gatherInputs', () => {
     );
 
     expect(calls.select).toHaveLength(1);
-    expect(calls.select[0]?.choiceValues).toEqual(
-      PACKAGE_MANAGER_CHOICES.map((c) => c.value),
-    );
+    expect(calls.select[0]?.choiceValues).toEqual(PACKAGE_MANAGER_CHOICES.map((c) => c.value));
     expect(resolved.template).toBe('web');
     expect(resolved.pm).toBe('npm');
   });
@@ -196,11 +194,9 @@ describe('gatherInputs', () => {
     const { driver, calls } = makeFakeDriver();
 
     await expect(
-      gatherInputs(
-        { projectName: 'my-app', template: undefined, pm: undefined },
-        driver,
-        { interactive: false },
-      ),
+      gatherInputs({ projectName: 'my-app', template: undefined, pm: undefined }, driver, {
+        interactive: false,
+      }),
     ).rejects.toBeInstanceOf(NonInteractiveStdinError);
 
     // Confirm no prompts were attempted in non-interactive mode.
@@ -212,11 +208,9 @@ describe('gatherInputs', () => {
     const { driver } = makeFakeDriver();
 
     await expect(
-      gatherInputs(
-        { projectName: 'my-app', template: 'web', pm: undefined },
-        driver,
-        { interactive: false },
-      ),
+      gatherInputs({ projectName: 'my-app', template: 'web', pm: undefined }, driver, {
+        interactive: false,
+      }),
     ).rejects.toThrow(/--pm/);
   });
 

@@ -28,16 +28,15 @@ export default async function BillingPage() {
         Current plan: <strong>{current?.role ?? 'free'}</strong>
       </p>
       <p>
-        Pick a plan below. Clicking a tier starts Clerk&apos;s managed checkout
-        flow; when you complete it, a webhook updates your role in the
-        database and your access elevates on the next page load.
+        Pick a plan below. Clicking a tier starts Clerk&apos;s managed checkout flow; when you
+        complete it, a webhook updates your role in the database and your access elevates on the
+        next page load.
       </p>
       <PricingTable />
       <p className="mt-6 text-sm opacity-70">
-        To manage an existing subscription (change plan, update payment
-        method, cancel), open the Clerk user menu in the header —
-        subscription management lives alongside your account settings
-        under Clerk&apos;s <code>&lt;UserButton /&gt;</code>.
+        To manage an existing subscription (change plan, update payment method, cancel), open the
+        Clerk user menu in the header — subscription management lives alongside your account
+        settings under Clerk&apos;s <code>&lt;UserButton /&gt;</code>.
       </p>
     </section>
   );

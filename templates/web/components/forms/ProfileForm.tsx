@@ -18,10 +18,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 
-import {
-  profileFormSchema,
-  type ProfileFormValues,
-} from '@/lib/validation/profile-form';
+import { profileFormSchema, type ProfileFormValues } from '@/lib/validation/profile-form';
 
 export function ProfileForm() {
   const {
@@ -57,9 +54,7 @@ export function ProfileForm() {
           aria-invalid={errors.displayName ? 'true' : 'false'}
           {...register('displayName')}
         />
-        {errors.displayName && (
-          <p role="alert">{errors.displayName.message}</p>
-        )}
+        {errors.displayName && <p role="alert">{errors.displayName.message}</p>}
       </div>
 
       <div>

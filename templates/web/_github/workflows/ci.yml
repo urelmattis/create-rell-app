@@ -1,0 +1,58 @@
+# CI for {{projectName}}. Two jobs, both required by branch protection (see
+# scripts/queue-install.sh): `check` runs the repository's own gates and
+# `security-scan` runs Semgrep. Every pull request runs both on its own head;
+# the AFK agent queue's auto-merge waits for them.
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Husky's `prepare` hook has nothing to do on a runner.
+  HUSKY: '0'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+{{pmSetupSteps}}
+
+      - name: Install dependencies
+        run: {{pmCiInstallCmd}}
+
+      - name: Lint
+        run: {{pmRunCmd}} lint
+
+      - name: Format check
+        run: {{pmRunCmd}} format:check
+
+      - name: Type check
+        run: {{pmRunCmd}} typecheck
+
+      - name: Tests
+        run: {{pmRunCmd}} test
+
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: returntocorp/semgrep:1.156.0
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Semgrep (security-audit + secrets + injection + xss)
+        run: |
+          semgrep scan \
+            --config=p/security-audit \
+            --config=p/secrets \
+            --config=p/sql-injection \
+            --config=p/xss \
+            --exclude=node_modules \
+            --exclude=dist \
+            --exclude=.next \
+            --error \
+            --quiet

@@ -20,8 +20,8 @@ export default function PaidFeaturePage() {
         <div>
           <h2>Welcome, paid user</h2>
           <p>
-            This is where your paid-tier content lives. Free users see the
-            paywall; paid users see this section.
+            This is where your paid-tier content lives. Free users see the paywall; paid users see
+            this section.
           </p>
         </div>
       </RoleGate>

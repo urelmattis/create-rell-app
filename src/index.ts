@@ -19,6 +19,8 @@ import { buildNextStepsLines } from './banner.ts';
 import {
   cleanupLockFiles,
   defaultProcessRunner,
+  formatProject,
+  getPackageManagerCommands,
   installDependencies,
   InstallFailedError,
 } from './install.ts';
@@ -68,6 +70,13 @@ export interface CliOptions {
   dryRun?: boolean;
   /** Maps to `--yes`/`-y`: skip prompts, default unspecified values. */
   yes?: boolean;
+  /**
+   * Maps to Commander's `--no-queue` negation. Commander stores this as
+   * `queue: false` when `--no-queue` is passed; otherwise the field is left
+   * undefined (treated as `true`): every project gets the AFK agent queue
+   * (workflows, prompts, skills, agent docs) unless told not to.
+   */
+  queue?: boolean;
 }
 
 /**
@@ -91,9 +100,10 @@ export function buildProgram(): Command {
     .option('--no-install', 'skip dependency installation after scaffolding')
     .option('--no-git', 'skip git repository initialization after scaffolding')
     .option(
-      '--dry-run',
-      'show files that would be written without touching the filesystem',
+      '--no-queue',
+      'skip the AFK agent queue (agent workflows and prompts, .claude/, docs/, CONTEXT.md, .sandcastle/, scripts/queue-install.sh)',
     )
+    .option('--dry-run', 'show files that would be written without touching the filesystem')
     .action(async (projectName: string, options: CliOptions) => {
       await runCli(projectName, options);
     });
@@ -172,6 +182,8 @@ export interface RunCliDeps {
   initGit?: boolean;
   /** When `true`, the scaffold flow runs in dry-run mode. */
   dryRun?: boolean;
+  /** Whether to add the AFK agent queue bundle. Defaults to `true`. */
+  addQueue?: boolean;
 }
 
 export async function runCli(
@@ -204,6 +216,8 @@ export async function runCli(
   const shouldInstallDeps = dryRun ? false : (deps.installDeps ?? options.install ?? true);
   // `--no-git` (Commander negation) works the same way.
   const shouldInitGit = dryRun ? false : (deps.initGit ?? options.git ?? true);
+  // `--no-queue` likewise; dry-run still plans the queue files.
+  const shouldAddQueue = deps.addQueue ?? options.queue ?? true;
 
   try {
     // === Story 1.5 validation gate ===
@@ -261,6 +275,7 @@ export async function runCli(
       gitRunner,
       shouldInstallDeps,
       shouldInitGit,
+      shouldAddQueue,
       dryRun,
     });
   } catch (err) {
@@ -285,8 +300,16 @@ interface ExecuteScaffoldFlowOptions {
   gitRunner: GitRunner;
   shouldInstallDeps: boolean;
   shouldInitGit: boolean;
+  shouldAddQueue: boolean;
   dryRun: boolean;
 }
+
+/**
+ * Name of the shared bundle directory under `templates/` that carries the
+ * AFK agent queue. It is not a template a user can choose; it is layered on
+ * top of whichever template was chosen.
+ */
+export const QUEUE_BUNDLE_DIR = '_queue';
 
 async function pathExists(p: string): Promise<boolean> {
   try {
@@ -307,9 +330,11 @@ async function executeScaffoldFlow(opts: ExecuteScaffoldFlowOptions): Promise<vo
     gitRunner,
     shouldInstallDeps,
     shouldInitGit,
+    shouldAddQueue,
     dryRun,
   } = opts;
   const templateDir = resolve(templatesDir, resolved.template);
+  const queueDir = resolve(templatesDir, QUEUE_BUNDLE_DIR);
 
   console.log('');
   console.log(chalk.bold('create-rell-app'));
@@ -329,7 +354,26 @@ async function executeScaffoldFlow(opts: ExecuteScaffoldFlowOptions): Promise<vo
     return;
   }
 
-  const result = await scaffoldRunner(templateDir, targetDir, resolved, { dryRun });
+  const templateResult = await scaffoldRunner(templateDir, targetDir, resolved, { dryRun });
+
+  // The AFK agent queue is a second template layered on the first: the same
+  // engine, the same tokens, one shared bundle for every template. It shares
+  // directories with a template's own files (`.github/` holds the template's
+  // ci.yml and dependabot.yml next to the queue's workflows) but never a file
+  // name, so order does not matter beyond the log.
+  let queueResult: ScaffoldResult | undefined;
+  if (shouldAddQueue && (await pathExists(queueDir))) {
+    queueResult = await scaffoldRunner(queueDir, targetDir, resolved, { dryRun });
+  } else if (shouldAddQueue) {
+    console.log('[create-rell-app] the agent queue bundle is not in this build — skipping it.');
+  } else {
+    console.log(chalk.dim('[create-rell-app] skipping the agent queue (--no-queue)'));
+  }
+  const result: ScaffoldResult = {
+    filesWritten: templateResult.filesWritten + (queueResult?.filesWritten ?? 0),
+    targetDir: templateResult.targetDir,
+    plannedFiles: [...(templateResult.plannedFiles ?? []), ...(queueResult?.plannedFiles ?? [])],
+  };
 
   if (dryRun) {
     console.log(
@@ -369,13 +413,27 @@ async function executeScaffoldFlow(opts: ExecuteScaffoldFlowOptions): Promise<vo
       }
       throw err;
     }
+
+    // Prettier is now installed, so the tree can be formatted for this
+    // project's name before the first commit (see formatProject).
+    console.log(chalk.cyan('Formatting the generated files…'));
+    try {
+      await formatProject(targetDir, resolved.pm, installRunner);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        chalk.yellow(
+          `Formatting skipped (run "${getPackageManagerCommands(resolved.pm).run} format" yourself): ${message}`,
+        ),
+      );
+    }
   }
 
   if (shouldInitGit) {
     await initGitRepo(targetDir, gitRunner);
   }
 
-  printNextSteps(resolved, targetDir);
+  printNextSteps(resolved, targetDir, shouldAddQueue);
 }
 
 /**
@@ -407,8 +465,8 @@ async function initGitRepo(targetDir: string, gitRunner: GitRunner): Promise<voi
  * Print the post-scaffold next-steps banner. Composition lives in
  * `buildNextStepsLines` (pure, tested); this only styles + writes.
  */
-function printNextSteps(resolved: ResolvedInputs, targetDir: string): void {
-  const lines = buildNextStepsLines(resolved, targetDir);
+function printNextSteps(resolved: ResolvedInputs, targetDir: string, withQueue = true): void {
+  const lines = buildNextStepsLines(resolved, targetDir, process.cwd(), { withQueue });
   console.log('');
   for (const line of lines) {
     if (line.startsWith('Success!')) {

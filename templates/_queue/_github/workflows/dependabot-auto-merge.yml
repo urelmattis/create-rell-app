@@ -1,0 +1,35 @@
+# Minor and patch updates from Dependabot merge on their own once the
+# required checks pass; majors wait for a person. Auto-merge is enabled in
+# the repository settings, and Dependabot keeps its own branches level with
+# main because a protection rule requires it.
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: dependabot/fetch-metadata@v3
+        id: meta
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for minor and patch updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+      - name: Leave majors to a person
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: echo "major update ${{ steps.meta.outputs.dependency-names }} left for a human"

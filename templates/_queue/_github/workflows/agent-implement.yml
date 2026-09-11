@@ -1,0 +1,156 @@
+# Queue step 2: explore dispatches this for a `trivial` or `ready` verdict, or
+# a human adds `agent-implement` to an explored issue; a fresh
+# Claude session implements it on agent/issue-<n> (TDD at the seams the
+# exploration named, code-review before commit), runs typecheck/lint/test,
+# opens a PR labeled `agent-pr`, and removes the label. The PR is opened
+# through the GitHub MCP tool so it is authored by the Claude app — a PR
+# created with the workflow's own GITHUB_TOKEN would not trigger the review
+# workflow. The prompt lives in .github/prompts/.
+name: Agent implement
+
+on:
+  issues:
+    types: [labeled]
+  # Explore dispatches this with the issue number; a person can too.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to implement
+        required: true
+        type: string
+
+concurrency:
+  group: agent-implement-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  implement:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'agent-implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+{{pmSetupSteps}}
+
+      - name: Mark the issue as being implemented
+        # The prompt removes `agent-implement` at the end and the assert step
+        # keys on it, so a dispatched issue gets the label first. A label added
+        # with the workflow token raises no event, so this cannot re-trigger.
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ISSUE: ${{ inputs.issue }}
+        run: gh issue edit "$ISSUE" --add-label agent-implement > /dev/null
+
+      - name: Install dependencies
+        run: {{pmCiInstallCmd}}
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # A run dispatched by another workflow has the workflow token's bot
+          # as its actor, which the action rejects unless listed here.
+          allowed_bots: github-actions
+          # The transcript goes to the run log. Private repository; without it a
+          # failing run reports only is_error:true and nothing to act on.
+          show_full_output: true
+          prompt: |
+            Follow .github/prompts/agent-implement.md exactly. Read that file first.
+            Repository: ${{ github.repository }}. Issue number: ${{ github.event.issue.number || inputs.issue }}.
+            Base branch: main. Branch to create: agent/issue-${{ github.event.issue.number || inputs.issue }}.
+          # The GitHub MCP tools must be named here, not only in the settings
+          # allow list: the action starts that MCP server only when
+          # --allowedTools in claude_args names its tools; a run without it
+          # starts with no MCP servers and has no way to open its PR.
+          claude_args: |
+            --max-turns 120
+            --model claude-sonnet-5
+            --allowedTools "mcp__github__create_pull_request,mcp__github__get_issue,mcp__github__add_issue_comment"
+          # Agent/Task are denied below: a headless run ends the moment the session
+          # stops calling tools, so work handed to background sub-agents never
+          # comes back.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Read",
+                  "Glob",
+                  "Grep",
+                  "Edit",
+                  "Write",
+                  "Bash({{pmRunCmd}} typecheck)",
+                  "Bash({{pmRunCmd}} lint)",
+                  "Bash({{pmRunCmd}} test)",
+                  "Bash({{pmRunCmd}} test *)",
+                  "Bash({{pmRunCmd}} format)",
+                  "Bash({{pmRunCmd}} format:check)",
+                  "Bash({{pmRunCmd}} db:generate)",
+                  "Bash({{pmLockfileOnlyCmd}})",
+                  "Bash({{pmCiInstallCmd}})",
+                  "Bash(npm view *)",
+                  "Bash(git status *)",
+                  "Bash(git diff *)",
+                  "Bash(git log *)",
+                  "Bash(git checkout -b *)",
+                  "Bash(git switch -c *)",
+                  "Bash(git add *)",
+                  "Bash(git commit *)",
+                  "Bash(git push -u origin agent/*)",
+                  "Bash(git push origin agent/*)",
+                  "Bash(gh issue view *)",
+                  "Bash(gh issue comment *)",
+                  "Bash(gh issue edit *)",
+                  "Bash(gh pr view *)",
+                  "Bash(gh pr edit *)",
+                  "mcp__github__create_pull_request",
+                  "mcp__github__get_issue",
+                  "mcp__github__add_issue_comment"
+                ],
+                "deny": [
+                  "Agent",
+                  "Task",
+                  "Bash(git push --force*)",
+                  "Bash(git push -f *)",
+                  "Bash(gh pr merge *)",
+                  "Bash(gh pr review *)"
+                ]
+              }
+            }
+
+      - name: Assert the pull request landed
+        # Judge by GitHub state, not the action's exit code: a session can
+        # report success with no commit, no push and no PR.
+        if: ${{ !cancelled() }}
+        env:
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          labels=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(" ")')
+          pr=$(gh pr list --head "agent/issue-$ISSUE" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$pr" ]]; then
+            gh pr edit "$pr" --add-label agent-pr > /dev/null
+            gh issue edit "$ISSUE" --remove-label agent-implement > /dev/null 2>&1 || true
+            echo "pull request #$pr is open"
+            exit 0
+          fi
+          if [[ " $labels " == *" needs-human "* ]]; then
+            gh issue edit "$ISSUE" --remove-label agent-implement > /dev/null 2>&1 || true
+            echo "stopped for a human, as step 5 of the prompt allows"
+            exit 0
+          fi
+          gh issue edit "$ISSUE" --add-label needs-human > /dev/null
+          gh issue edit "$ISSUE" --remove-label agent-implement > /dev/null 2>&1 || true
+          gh issue comment "$ISSUE" --body "The implement run ended with no pull request and no \`needs-human\` note: $RUN_URL. Re-add \`agent-implement\` to retry once the cause is fixed." > /dev/null
+          echo "::error::implement run ended without a pull request"
+          exit 1

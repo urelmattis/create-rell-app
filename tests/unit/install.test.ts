@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 
 import {
   cleanupLockFiles,
+  formatProject,
   getPackageManagerCommands,
   installDependencies,
   InstallFailedError,
@@ -60,6 +61,13 @@ describe('PACKAGE_MANAGER_COMMANDS', () => {
       run: 'npm run',
       exec: 'npx',
       lockFile: 'package-lock.json',
+      ci: 'npm ci',
+      lockfileOnly: 'npm install --package-lock-only',
+      nodeCache: 'npm',
+      audit: 'npm audit --audit-level=moderate',
+      why: 'npm ls',
+      addDev: 'npm install -D',
+      execLocal: 'npx',
     });
   });
 
@@ -70,6 +78,13 @@ describe('PACKAGE_MANAGER_COMMANDS', () => {
       run: 'pnpm run',
       exec: 'pnpm dlx',
       lockFile: 'pnpm-lock.yaml',
+      ci: 'pnpm install --frozen-lockfile',
+      lockfileOnly: 'pnpm install --lockfile-only',
+      nodeCache: 'pnpm',
+      audit: 'pnpm audit --audit-level moderate',
+      why: 'pnpm why -r',
+      addDev: 'pnpm add -D',
+      execLocal: 'pnpm exec',
     });
   });
 
@@ -80,7 +95,24 @@ describe('PACKAGE_MANAGER_COMMANDS', () => {
       run: 'yarn run',
       exec: 'yarn dlx',
       lockFile: 'yarn.lock',
+      ci: 'yarn install --immutable',
+      lockfileOnly: 'yarn install --mode update-lockfile',
+      nodeCache: 'yarn',
+      audit: 'yarn npm audit --all --recursive --severity moderate',
+      why: 'yarn why',
+      addDev: 'yarn add -D',
+      execLocal: 'yarn',
     });
+  });
+});
+
+describe('formatProject', () => {
+  it("runs the project's format script through the package manager, in the target directory", async () => {
+    const { runner, calls } = makeRecordingRunner();
+    await formatProject(tempRoot, 'yarn', runner);
+    expect(calls).toEqual([{ command: 'yarn', args: ['run', 'format'], cwd: tempRoot }]);
+    await formatProject(tempRoot, 'npm', runner);
+    expect(calls[1]).toEqual({ command: 'npm', args: ['run', 'format'], cwd: tempRoot });
   });
 });
 
@@ -138,9 +170,7 @@ describe('installDependencies', () => {
     const filePath = join(tempRoot, 'a-file');
     await writeFile(filePath, '', 'utf8');
 
-    await expect(installDependencies(filePath, 'npm', runner)).rejects.toThrow(
-      /not a directory/,
-    );
+    await expect(installDependencies(filePath, 'npm', runner)).rejects.toThrow(/not a directory/);
     expect(calls).toHaveLength(0);
   });
 });

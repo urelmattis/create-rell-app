@@ -35,15 +35,13 @@ export interface CurrentUserWithRole {
  *
  * Wrapped in React's cache() so duplicate calls within a single render dedupe.
  */
-export const getCurrentUserWithRole = cache(
-  async (): Promise<CurrentUserWithRole | null> => {
-    const { userId } = await auth();
-    if (!userId) return null;
+export const getCurrentUserWithRole = cache(async (): Promise<CurrentUserWithRole | null> => {
+  const { userId } = await auth();
+  if (!userId) return null;
 
-    const row = await getUserRoleByClerkId(getDb(), userId);
-    return {
-      clerkUserId: userId,
-      role: row?.role ?? 'free',
-    };
-  },
-);
+  const row = await getUserRoleByClerkId(getDb(), userId);
+  return {
+    clerkUserId: userId,
+    role: row?.role ?? 'free',
+  };
+});

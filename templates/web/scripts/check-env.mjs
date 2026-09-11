@@ -14,15 +14,23 @@ import { fileURLToPath } from 'node:url';
 
 // Where to get each known key. Unknown keys still render with a generic note.
 const LINKS = {
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'Clerk → API keys: https://dashboard.clerk.com/last-active?path=api-keys',
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+    'Clerk → API keys: https://dashboard.clerk.com/last-active?path=api-keys',
   CLERK_SECRET_KEY: 'Clerk → API keys: https://dashboard.clerk.com/last-active?path=api-keys',
-  CLERK_BILLING_WEBHOOK_SIGNING_SECRET: 'Clerk → Webhooks: https://dashboard.clerk.com/last-active?path=webhooks',
-  NEXT_PUBLIC_SUPABASE_URL: 'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: 'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
-  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: 'Clerk → API keys: https://dashboard.clerk.com/last-active?path=api-keys',
-  EXPO_PUBLIC_SUPABASE_URL: 'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
-  EXPO_PUBLIC_SUPABASE_ANON_KEY: 'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
-  DATABASE_URL: 'Supabase → Settings › Database (connection string): https://supabase.com/dashboard/project/_/settings/database',
+  CLERK_BILLING_WEBHOOK_SIGNING_SECRET:
+    'Clerk → Webhooks: https://dashboard.clerk.com/last-active?path=webhooks',
+  NEXT_PUBLIC_SUPABASE_URL:
+    'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
+  NEXT_PUBLIC_SUPABASE_ANON_KEY:
+    'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
+  EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY:
+    'Clerk → API keys: https://dashboard.clerk.com/last-active?path=api-keys',
+  EXPO_PUBLIC_SUPABASE_URL:
+    'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
+  EXPO_PUBLIC_SUPABASE_ANON_KEY:
+    'Supabase → Settings › API: https://supabase.com/dashboard/project/_/settings/api',
+  DATABASE_URL:
+    'Supabase → Settings › Database (connection string): https://supabase.com/dashboard/project/_/settings/database',
 };
 
 /** Classify keys from an .env.example: uncommented `KEY=` → required, `# KEY=` → optional. */
@@ -113,7 +121,12 @@ function main() {
     process.exit(1);
   }
   if (missingOptional.length > 0) {
-    out(C('2', `  All required keys set. ${missingOptional.length} optional key(s) still empty (e.g. DATABASE_URL for db:migrate).\n\n`));
+    out(
+      C(
+        '2',
+        `  All required keys set. ${missingOptional.length} optional key(s) still empty (e.g. DATABASE_URL for db:migrate).\n\n`,
+      ),
+    );
   } else {
     out(C('32', '  All environment keys set.\n\n'));
   }

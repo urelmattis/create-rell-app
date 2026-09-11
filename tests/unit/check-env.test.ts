@@ -20,7 +20,11 @@ describe('check-env parseDotenv', () => {
 describe('check-env evaluate', () => {
   it('flags only non-empty-missing required keys; optional never blocks', () => {
     const spec = { required: ['A', 'B'], optional: ['DATABASE_URL'] };
-    const { missingRequired, missingOptional } = evaluate(spec, { A: 'x', B: '', DATABASE_URL: '' });
+    const { missingRequired, missingOptional } = evaluate(spec, {
+      A: 'x',
+      B: '',
+      DATABASE_URL: '',
+    });
     expect(missingRequired).toEqual(['B']);
     expect(missingOptional).toEqual(['DATABASE_URL']);
   });

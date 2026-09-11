@@ -16,7 +16,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@clerk/nextjs": "7.0.11",
@@ -49,7 +50,8 @@
     "prettier": "3.8.1",
     "tailwindcss": "4.1.16",
     "typescript": "6.0.2",
-    "typescript-eslint": "8.58.1"
+    "typescript-eslint": "8.58.1",
+    "vitest": "4.0.18"
   },
   "prettier": {
     "semi": true,
@@ -59,7 +61,11 @@
     "tabWidth": 2
   },
   "lint-staged": {
-    "*.{ts,tsx}": ["prettier --write"],
-    "*.{js,jsx,mjs,cjs,json,css,md}": ["prettier --write"]
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{js,jsx,mjs,cjs,json,css,md}": [
+      "prettier --write"
+    ]
   }
 }

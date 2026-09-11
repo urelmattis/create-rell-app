@@ -128,7 +128,9 @@ describe('substituteVariables', () => {
   });
 
   it('leaves unknown tokens in place', () => {
-    expect(substituteVariables('{{unknown}} and {{name}}', { name: 'x' })).toBe('{{unknown}} and x');
+    expect(substituteVariables('{{unknown}} and {{name}}', { name: 'x' })).toBe(
+      '{{unknown}} and x',
+    );
   });
 
   it('handles multiple occurrences of the same token', () => {
@@ -445,9 +447,9 @@ describe('substitutePathSegment (security)', () => {
   });
 
   it('rejects substitutions that introduce a backslash', () => {
-    expect(() =>
-      substitutePathSegment('{{projectName}}.txt', { projectName: '..\\boom' }),
-    ).toThrow(UnsafePathError);
+    expect(() => substitutePathSegment('{{projectName}}.txt', { projectName: '..\\boom' })).toThrow(
+      UnsafePathError,
+    );
   });
 
   it('rejects substitutions that produce `..`', () => {
@@ -469,9 +471,9 @@ describe('substitutePathSegment (security)', () => {
   });
 
   it('rejects substitutions that contain a NUL byte', () => {
-    expect(() =>
-      substitutePathSegment('{{projectName}}', { projectName: 'evil\0name' }),
-    ).toThrow(UnsafePathError);
+    expect(() => substitutePathSegment('{{projectName}}', { projectName: 'evil\0name' })).toThrow(
+      UnsafePathError,
+    );
   });
 });
 

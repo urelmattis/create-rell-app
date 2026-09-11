@@ -10,7 +10,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@clerk/clerk-expo": "2.19.31",
@@ -37,6 +39,7 @@
     "@babel/core": "7.28.6",
     "@types/react": "19.2.14",
     "tailwindcss": "3.4.17",
-    "typescript": "6.0.2"
+    "typescript": "6.0.2",
+    "vitest": "4.0.18"
   }
 }

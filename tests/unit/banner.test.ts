@@ -33,6 +33,18 @@ describe('buildNextStepsLines', () => {
     expect(lines).toContain('cd ./my-app');
   });
 
+  it('names the queue install script as step 4 by default, and drops it with withQueue: false', () => {
+    const withQueue = buildNextStepsLines(resolved, '/work/my-app', '/work').join('\n');
+    expect(withQueue).toContain('4. gh repo create');
+    expect(withQueue).toContain('bash scripts/queue-install.sh');
+
+    const without = buildNextStepsLines(resolved, '/work/my-app', '/work', {
+      withQueue: false,
+    }).join('\n');
+    expect(without).not.toContain('queue-install');
+    expect(without).not.toContain('4.');
+  });
+
   it('web banner still contains "<pm> run dev" (back-compat with cli.test.ts)', () => {
     const web = { projectName: 'w', template: 'web', pm: 'pnpm' } as const;
     const lines = buildNextStepsLines(web, '/work/w', '/work').join('\n');

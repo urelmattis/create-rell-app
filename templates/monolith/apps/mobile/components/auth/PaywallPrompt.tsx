@@ -16,9 +16,7 @@ export function PaywallPrompt() {
   return (
     <View style={styles.container} accessibilityRole="summary">
       <Text style={styles.title}>Upgrade required</Text>
-      <Text style={styles.body}>
-        This feature is part of the paid plan. Upgrade to continue.
-      </Text>
+      <Text style={styles.body}>This feature is part of the paid plan. Upgrade to continue.</Text>
       <Link href="/(tabs)/billing" style={styles.link}>
         View plans
       </Link>

@@ -98,6 +98,12 @@ const SPECIAL_FILENAME_RENAMES: ReadonlyMap<string, string> = new Map([
   // several `tsconfig.json`-containing trees (root + templates). The
   // scaffold engine renames it back to `eslint.config.mjs` on write.
   ['_eslint.config.mjs', 'eslint.config.mjs'],
+  // The AFK queue bundle (templates/_queue) ships its dot-directories under
+  // placeholder names for the same npm-tarball reason as `_gitignore`.
+  ['_github', '.github'],
+  ['_claude', '.claude'],
+  ['_sandcastle', '.sandcastle'],
+  ['_prettierignore', '.prettierignore'],
 ]);
 
 export interface ScaffoldOptions {
@@ -395,7 +401,53 @@ export function buildSubstitutionVars(resolvedInputs: ResolvedInputs): Record<st
     pmInstallCmd: pmCommands.install,
     pmRunCmd: pmCommands.run,
     pmExecCmd: pmCommands.exec,
+    // Used by the AFK queue bundle (templates/_queue): the workflows and the
+    // agent prompts name the exact commands the sessions may run.
+    pmCiInstallCmd: pmCommands.ci,
+    pmLockfileOnlyCmd: pmCommands.lockfileOnly,
+    pmLockfile: pmCommands.lockFile,
+    pmNodeCache: pmCommands.nodeCache,
+    pmSetupSteps: buildToolchainSteps(resolvedInputs.pm),
+    pmAuditCmd: pmCommands.audit,
+    pmWhyCmd: pmCommands.why,
+    pmAddDevCmd: pmCommands.addDev,
+    pmExecLocalCmd: pmCommands.execLocal,
   };
+}
+
+/**
+ * The GitHub Actions steps that put the chosen package manager and Node on
+ * the runner, rendered as complete YAML list items at the indentation the
+ * queue workflows use for their `steps:`. Always non-empty, so a template
+ * can surround the token with blank lines without producing a double blank
+ * line for one package manager and not another.
+ */
+export function buildToolchainSteps(pm: ResolvedInputs['pm']): string {
+  const cache = getPackageManagerCommands(pm).nodeCache;
+  const setupNode = [
+    '      - uses: actions/setup-node@v6',
+    '        with:',
+    '          node-version: 22',
+    `          cache: ${cache}`,
+  ].join('\n');
+  if (pm === 'pnpm') {
+    return [
+      '      - uses: pnpm/action-setup@v6',
+      '        with:',
+      '          version: 10',
+      '',
+      setupNode,
+    ].join('\n');
+  }
+  if (pm === 'yarn') {
+    // The runner's preinstalled yarn is 1.x; the templates use Yarn 4 (`yarn dlx`,
+    // `--immutable`). Enable the corepack shim and install Yarn 4 as its global
+    // default before setup-node resolves the cache folder through it.
+    return ['      - run: corepack enable yarn && corepack install -g yarn@4', '', setupNode].join(
+      '\n',
+    );
+  }
+  return setupNode;
 }
 
 /**
@@ -412,9 +464,7 @@ async function materializeEnvLocal(
   plannedFiles: string[],
   dryRun: boolean,
 ): Promise<number> {
-  const examples = plannedFiles.filter(
-    (p) => p === '.env.example' || p.endsWith('/.env.example'),
-  );
+  const examples = plannedFiles.filter((p) => p === '.env.example' || p.endsWith('/.env.example'));
   let created = 0;
   for (const example of examples) {
     const local = example.replace(/\.env\.example$/, '.env.local');

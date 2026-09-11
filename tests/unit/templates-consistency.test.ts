@@ -120,14 +120,17 @@ describe('cross-template DB naming consistency', () => {
     }
   });
 
-  it.each(TEMPLATES)('0000_initial.sql in %s uses same RLS policy name + auth.jwt sub', async (tpl) => {
-    const text = await readFile(INITIAL_MIGRATION_PATHS[tpl], 'utf8');
-    expect(text).toContain('ENABLE ROW LEVEL SECURITY');
-    expect(text).toContain("auth.jwt()->>'sub'");
-    expect(text).toContain('select_user_roles_own');
-    expect(text).toContain('insert_user_roles_service');
-    expect(text).toContain('update_user_roles_service');
-  });
+  it.each(TEMPLATES)(
+    '0000_initial.sql in %s uses same RLS policy name + auth.jwt sub',
+    async (tpl) => {
+      const text = await readFile(INITIAL_MIGRATION_PATHS[tpl], 'utf8');
+      expect(text).toContain('ENABLE ROW LEVEL SECURITY');
+      expect(text).toContain("auth.jwt()->>'sub'");
+      expect(text).toContain('select_user_roles_own');
+      expect(text).toContain('insert_user_roles_service');
+      expect(text).toContain('update_user_roles_service');
+    },
+  );
 
   it('initial migration content is byte-identical across all three templates', async () => {
     const [mono, web, mobile] = await Promise.all([
@@ -181,21 +184,18 @@ describe('cross-template DB naming consistency', () => {
     },
   );
 
-  it.each(TEMPLATES)(
-    'queries.ts in %s template exports the replay-safe helpers',
-    async (tpl) => {
-      const queriesPath =
-        tpl === 'monolith'
-          ? join(MONOLITH_SHARED_DIR, 'db', 'queries.ts')
-          : tpl === 'web'
-            ? join(WEB_DIR, 'db', 'queries.ts')
-            : join(MOBILE_DIR, 'db', 'queries.ts');
-      const text = await readFile(queriesPath, 'utf8');
-      expect(text).toContain('export async function insertDefaultUserRole');
-      expect(text).toContain('export async function markWebhookSeen');
-      expect(text).toContain('onConflictDoNothing');
-    },
-  );
+  it.each(TEMPLATES)('queries.ts in %s template exports the replay-safe helpers', async (tpl) => {
+    const queriesPath =
+      tpl === 'monolith'
+        ? join(MONOLITH_SHARED_DIR, 'db', 'queries.ts')
+        : tpl === 'web'
+          ? join(WEB_DIR, 'db', 'queries.ts')
+          : join(MOBILE_DIR, 'db', 'queries.ts');
+    const text = await readFile(queriesPath, 'utf8');
+    expect(text).toContain('export async function insertDefaultUserRole');
+    expect(text).toContain('export async function markWebhookSeen');
+    expect(text).toContain('onConflictDoNothing');
+  });
 });
 
 // ===== Env var naming =====
@@ -239,7 +239,13 @@ describe('cross-template environment variable naming', () => {
 // ===== README structure =====
 
 describe('cross-template README structure', () => {
-  const REQUIRED_SECTIONS = ['## Layout', '## Getting started', '## Stack', '## Useful commands', '## Notes'];
+  const REQUIRED_SECTIONS = [
+    '## Layout',
+    '## Getting started',
+    '## Stack',
+    '## Useful commands',
+    '## Notes',
+  ];
 
   it.each(TEMPLATES)('README in %s template has every required section', async (tpl) => {
     const text = await readFile(join(ROOT_DIRS[tpl], 'README.md'), 'utf8');
@@ -260,15 +266,18 @@ describe('cross-template README structure', () => {
 // ===== package.json scripts / prettier / lint-staged =====
 
 describe('cross-template package.json DX scripts', () => {
-  it.each(TEMPLATES)('%s package.json declares format / format:check / prepare scripts', async (tpl) => {
-    const text = await readFile(join(ROOT_DIRS[tpl], 'package.json'), 'utf8');
-    const parsed = JSON.parse(text) as {
-      scripts: Record<string, string>;
-    };
-    expect(parsed.scripts['format']).toBe('prettier --write .');
-    expect(parsed.scripts['format:check']).toBe('prettier --check .');
-    expect(parsed.scripts['prepare']).toBe('husky');
-  });
+  it.each(TEMPLATES)(
+    '%s package.json declares format / format:check / prepare scripts',
+    async (tpl) => {
+      const text = await readFile(join(ROOT_DIRS[tpl], 'package.json'), 'utf8');
+      const parsed = JSON.parse(text) as {
+        scripts: Record<string, string>;
+      };
+      expect(parsed.scripts['format']).toBe('prettier --write .');
+      expect(parsed.scripts['format:check']).toBe('prettier --check .');
+      expect(parsed.scripts['prepare']).toBe('husky');
+    },
+  );
 
   it.each(TEMPLATES)('%s package.json declares the same Drizzle script keys', async (tpl) => {
     // The monolith proxies to the `shared` workspace via pm --prefix, while
@@ -303,15 +312,18 @@ describe('cross-template package.json DX scripts', () => {
     expect(parsed['lint-staged']['*.{js,jsx,mjs,cjs,json,css,md}']).toEqual(['prettier --write']);
   });
 
-  it.each(TEMPLATES)('%s package.json pins husky + lint-staged + prettier + eslint exactly', async (tpl) => {
-    const text = await readFile(join(ROOT_DIRS[tpl], 'package.json'), 'utf8');
-    const parsed = JSON.parse(text) as { devDependencies: Record<string, string> };
-    const exact = /^\d+\.\d+\.\d+$/;
-    expect(parsed.devDependencies['husky']).toMatch(exact);
-    expect(parsed.devDependencies['lint-staged']).toMatch(exact);
-    expect(parsed.devDependencies['prettier']).toMatch(exact);
-    expect(parsed.devDependencies['eslint']).toMatch(exact);
-  });
+  it.each(TEMPLATES)(
+    '%s package.json pins husky + lint-staged + prettier + eslint exactly',
+    async (tpl) => {
+      const text = await readFile(join(ROOT_DIRS[tpl], 'package.json'), 'utf8');
+      const parsed = JSON.parse(text) as { devDependencies: Record<string, string> };
+      const exact = /^\d+\.\d+\.\d+$/;
+      expect(parsed.devDependencies['husky']).toMatch(exact);
+      expect(parsed.devDependencies['lint-staged']).toMatch(exact);
+      expect(parsed.devDependencies['prettier']).toMatch(exact);
+      expect(parsed.devDependencies['eslint']).toMatch(exact);
+    },
+  );
 });
 
 // ===== RoleGate hierarchy =====
@@ -330,9 +342,7 @@ describe('cross-template RoleGate hierarchy', () => {
     for (const [label, path] of Object.entries(ROLE_GATE_TARGETS)) {
       const text = await readFile(path, 'utf8');
       expect(text, `${label} RoleGate missing canonical hierarchy`).toMatch(HIERARCHY_PATTERN);
-      expect(text, `${label} RoleGate missing hasRequiredRole helper`).toContain(
-        'hasRequiredRole',
-      );
+      expect(text, `${label} RoleGate missing hasRequiredRole helper`).toContain('hasRequiredRole');
     }
   });
 });

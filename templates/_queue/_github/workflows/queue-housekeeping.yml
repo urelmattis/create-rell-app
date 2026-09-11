@@ -1,0 +1,125 @@
+# Daily: finish what GitHub leaves undone after a merge performed by the
+# workflow token. Tier 3 merges agent PRs through auto-merge, and GitHub then
+# neither closes the issues those PRs said they close nor deletes their
+# branches, and raises no pull_request:closed event that a workflow could act
+# on. So: for every agent PR merged in the last
+# two weeks, close its still-open linked issues and delete its head branch;
+# for every agent PR closed without merging, delete the branch too.
+# And an agent PR the review passed that became conflicting after
+# auto-merge was enabled would wait forever: hand it one merge-main round,
+# or a person.
+name: Queue housekeeping
+
+on:
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: queue-housekeeping
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Close linked issues and delete branches of finished agent PRs
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '14 days ago' +%Y-%m-%d)
+          gh pr list --repo "$REPO" --state closed --label agent-pr --limit 100 --search "closed:>=$since" \
+            --json number,headRefName,headRefOid,mergedAt,mergeCommit \
+            --jq '.[] | "\(.number)\t\(.headRefName)\t\(.headRefOid)\t\(.mergedAt // "")\t\(.mergeCommit.oid // "")"' \
+          | while IFS=$'\t' read -r n head headsha merged sha; do
+              if [[ -n "$merged" ]]; then
+                # Linked issues that the merge should have closed. One that a
+                # person reopened after the merge stays open: that is a decision.
+                # shellcheck disable=SC2016
+                gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){closingIssuesReferences(first:20){nodes{number state}}}}}' \
+                  -f o="${REPO%/*}" -f r="${REPO#*/}" -F n="$n" \
+                  --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[] | select(.state == "OPEN") | .number' \
+                | while read -r issue; do
+                    # gh's --jq takes no --arg, so the merge timestamp (ISO 8601 from
+                    # GitHub, safe to interpolate) goes into the expression; one line
+                    # per reopen event survives --paginate, so count lines. A failed
+                    # lookup leaves the issue open rather than assuming zero.
+                    reopened=$(gh api "repos/$REPO/issues/$issue/timeline?per_page=100" --paginate --jq ".[] | select(.event == \"reopened\" and .created_at > \"$merged\") | .created_at" | wc -l | tr -d ' ') || reopened=""
+                    if [[ -z "$reopened" ]]; then echo "could not read #$issue's timeline; leaving it open"; continue; fi
+                    if [[ "$reopened" != "0" ]]; then echo "#$issue was reopened after #$n merged; leaving it open"; continue; fi
+                    gh issue close "$issue" --repo "$REPO" --reason completed --comment "Closed by #$n, merged as ${sha:0:7} on ${merged%%T*}. The merge was performed by the workflow token, which does not close linked issues itself; this is the daily housekeeping doing it." > /dev/null
+                    echo "closed #$issue (linked from merged #$n)"
+                  done
+              fi
+              # The head branch is finished only while it still points at this
+              # PR's head; a re-dispatched issue reuses the branch name for a
+              # live PR, and that one must be left alone.
+              case "$head" in
+                agent/*|sandcastle/*)
+                  # A missing branch is an exit status, not empty output: on a 404 gh
+                  # prints the error body, which must not be read as a commit.
+                  if ! current=$(gh api "repos/$REPO/branches/$head" --jq .commit.sha 2>/dev/null); then
+                    echo "branch $head is already gone (PR #$n)"
+                  elif [[ "$current" == "$headsha" ]]; then
+                    if gh api -X DELETE "repos/$REPO/git/refs/heads/$head" > /dev/null 2>&1; then
+                      echo "deleted branch $head (PR #$n)"
+                    else
+                      echo "::warning::could not delete branch $head (PR #$n)"
+                    fi
+                  else
+                    echo "branch $head has moved on since #$n (${current:0:7} vs ${headsha:0:7}); leaving it"
+                  fi ;;
+              esac
+            done
+          echo "done"
+
+      - name: Unstick agent PRs that conflict with main
+        # The review's merge job catches a conflict it can see at the time;
+        # one that appears later, when main moves under an enabled auto-merge,
+        # is only visible here. Same cap as the merge job: one merge-main
+        # round per PR (`conflict-round`), then a person.
+        run: |
+          set -euo pipefail
+          # GitHub computes mergeability lazily: the first read after main
+          # moves returns UNKNOWN and only starts the job, so re-list until
+          # nothing is UNKNOWN or a minute has passed (the merge job's cap).
+          # What is still UNKNOWN is named, so a miss shows in the log.
+          for _ in 1 2 3 4 5 6; do
+            prs=$(gh pr list --repo "$REPO" --state open --label agent-pr --limit 50 --json number,labels,mergeable,autoMergeRequest)
+            jq -e '[.[] | select(.mergeable == "UNKNOWN")] | length == 0' <<< "$prs" > /dev/null && break
+            sleep 10
+          done
+          jq -r '.[] | select(.mergeable == "UNKNOWN") | "#\(.number): mergeability still UNKNOWN after a minute; checked again tomorrow"' <<< "$prs"
+          inflight=$(gh run list --repo "$REPO" --workflow agent-address.yml --limit 30 --json status,displayTitle --jq '[.[] | select(.status != "completed") | .displayTitle] | join("\n")')
+          jq -r '.[] | select(.mergeable == "CONFLICTING") | "\(.number)\t\([.labels[].name] | join(" "))\t\(.autoMergeRequest != null)"' <<< "$prs" \
+          | while IFS=$'\t' read -r n labels auto; do
+              if [[ " $labels " == *" needs-human "* ]]; then
+                echo "#$n: conflicting, already with a person"
+                continue
+              fi
+              if [[ "$auto" != "true" ]]; then
+                echo "#$n: conflicting, but auto-merge is not enabled; the merge job or a person handles it"
+                continue
+              fi
+              if grep -qxF "merge-main round on #$n" <<< "$inflight"; then
+                echo "#$n: a merge-main round is in flight; leaving it"
+                continue
+              fi
+              if [[ " $labels " == *" conflict-round "* ]]; then
+                gh pr edit "$n" --repo "$REPO" --add-label needs-human > /dev/null
+                gh pr comment "$n" --repo "$REPO" --body "Conflicts with \`main\` again after its one merge-main round. A person merges \`main\` in; then add \`re-review\`." > /dev/null
+                echo "#$n: second conflict; handed to a person"
+                continue
+              fi
+              gh workflow run agent-address.yml --repo "$REPO" -f pr="$n" -f brief=merge-main
+              echo "#$n: merge-main round dispatched"
+            done

@@ -1,0 +1,17 @@
+# Generated, vendored, or not ours to format
+node_modules
+.next
+.expo
+dist
+build
+coverage
+*.tsbuildinfo
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+# Vendored agent skills (npx skills add): upstream formatting, updated by the CLI
+.claude/skills
+skills-lock.json
+# sandcastle per-run worktrees and logs are whole checkouts
+.sandcastle/worktrees
+.sandcastle/logs

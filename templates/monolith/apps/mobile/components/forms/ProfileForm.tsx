@@ -13,10 +13,8 @@ import { standardSchemaResolver } from '@hookform/resolvers/standard-schema';
 import { Controller, useForm } from 'react-hook-form';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import {
-  profileFormSchema,
-  type ProfileFormValues,
-} from '@{{projectNameKebab}}/shared';
+import { profileFormSchema } from '@{{projectNameKebab}}/shared';
+import type { ProfileFormValues } from '@{{projectNameKebab}}/shared';
 
 export function ProfileForm() {
   const {
@@ -59,9 +57,7 @@ export function ProfileForm() {
             />
           )}
         />
-        {errors.displayName && (
-          <Text style={styles.error}>{errors.displayName.message}</Text>
-        )}
+        {errors.displayName && <Text style={styles.error}>{errors.displayName.message}</Text>}
       </View>
 
       <View style={styles.field}>
@@ -101,16 +97,10 @@ export function ProfileForm() {
             />
           )}
         />
-        {errors.website && (
-          <Text style={styles.error}>{errors.website.message}</Text>
-        )}
+        {errors.website && <Text style={styles.error}>{errors.website.message}</Text>}
       </View>
 
-      <Pressable
-        onPress={handleSubmit(onSubmit)}
-        disabled={isSubmitting}
-        style={styles.button}
-      >
+      <Pressable onPress={handleSubmit(onSubmit)} disabled={isSubmitting} style={styles.button}>
         <Text style={styles.buttonText}>{isSubmitting ? 'Saving…' : 'Save profile'}</Text>
       </Pressable>
     </View>

@@ -127,7 +127,11 @@ export interface PromptDriver {
   text(args: { message: string; default?: string }): Promise<string>;
   select<TValue extends string>(args: {
     message: string;
-    choices: ReadonlyArray<{ readonly name: string; readonly value: TValue; readonly description?: string }>;
+    choices: ReadonlyArray<{
+      readonly name: string;
+      readonly value: TValue;
+      readonly description?: string;
+    }>;
   }): Promise<TValue>;
   confirm(args: { message: string; default?: boolean }): Promise<boolean>;
 }

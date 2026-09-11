@@ -54,3 +54,6 @@ coverage
 
 # Misc
 *.log
+
+# Agent scratch space (the queue's prompts write here; nothing reads it)
+tmp/

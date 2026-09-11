@@ -10,13 +10,7 @@
 import { eq } from 'drizzle-orm';
 
 import type { DbClient } from './client';
-import {
-  type NewUserRole,
-  type Role,
-  type UserRole,
-  userRoles,
-  webhookDeliveries,
-} from './schema';
+import { type NewUserRole, type Role, type UserRole, userRoles, webhookDeliveries } from './schema';
 
 /**
  * Fetch a user_roles row by Clerk user ID. Returns `null` if the user has
@@ -67,10 +61,7 @@ export async function setUserRole(
  * one. Idempotent — used by the `user.created` webhook handler so that
  * a replay after the user has upgraded does not demote them back to free.
  */
-export async function insertDefaultUserRole(
-  db: DbClient,
-  clerkUserId: string,
-): Promise<void> {
+export async function insertDefaultUserRole(db: DbClient, clerkUserId: string): Promise<void> {
   await db
     .insert(userRoles)
     .values({ clerkUserId, role: 'free' })

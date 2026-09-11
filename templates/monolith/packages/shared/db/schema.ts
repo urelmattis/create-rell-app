@@ -32,7 +32,9 @@ export type Role = (typeof ROLES)[number];
 export const userRoles = pgTable(
   'user_roles',
   {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     clerkUserId: text('clerk_user_id').notNull().unique(),
     role: text('role', { enum: ROLES }).notNull().default('free'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Template sources are now Prettier-clean under the templates' own config,
+  and the smoke test runs `format:check` and `test` after lint and typecheck,
+  the same gates the generated `ci.yml` requires.
+
+### Added
+
+- **The AFK agent queue.** Every scaffold now carries the Claude Code
+  software factory: `agent-explore`, `agent-implement`, `agent-review`,
+  `agent-address` (review and merge-main briefs), `queue-housekeeping`,
+  `scheduled-review` and `dependabot-auto-merge` workflows with their prompts,
+  the vendored `mattpocock/skills` set with `docs/agents/` configured for
+  GitHub issues, a local `.claude/settings.json`, `CLAUDE.md`, `CONTEXT.md`,
+  `docs/adr/`, a `.sandcastle/` runner for the same pass in a local Docker
+  sandbox, and `scripts/queue-install.sh` for the one-time GitHub setup
+  (labels, merge settings, branch protection). The bundle lives in
+  `templates/_queue` and is layered on every template; `--no-queue` skips it.
+- **CI and Dependabot per template.** `.github/workflows/ci.yml` runs `check`
+  (lint, format, typecheck, test) and a Semgrep `security-scan`; these are the
+  checks branch protection requires. There is no audit gate in `check`: the
+  templates' pinned Clerk, Next and Expo versions carry open advisories, so it
+  would be red on the first commit; the Monday sweep audits and files issues. `.github/dependabot.yml` opens one pull
+  request per dependency (grouped updates drop the root `overrides` block) and
+  holds Expo-pinned native modules to patch bumps on mobile and monolith.
+- **Package-manager tokens for CI.** `{{pmCiInstallCmd}}`,
+  `{{pmLockfileOnlyCmd}}`, `{{pmLockfile}}`, `{{pmNodeCache}}`,
+  `{{pmSetupSteps}}`, `{{pmAuditCmd}}`, `{{pmWhyCmd}}`, `{{pmAddDevCmd}}` and
+  `{{pmExecLocalCmd}}` render the frozen install, the lockfile-only install,
+  the lockfile name, the `setup-node` cache key, the toolchain setup steps
+  (`pnpm/action-setup` for pnpm, corepack with Yarn 4 for Yarn), the audit and
+  dependency-path commands, adding a dev dependency, and running a locally
+  installed bin, for npm, pnpm and Yarn.
+- **A `test` script in every template** (`vitest run --passWithNoTests`, on
+  vitest 4.0.18: the 4.1 line's peer set crashes npm 10.9's resolver), so the
+  queue's test gate and CI have something to run from the first commit.
+- **`format` runs after install.** Template files are formatted for a typical
+  project name; a very short or very long one moves Prettier's wrap points on
+  the lines that carry it, and the CI `check` job runs `format:check` over the
+  whole tree. The CLI now runs the project's own `format` script once the
+  install has put Prettier in place, so the first commit is clean for any
+  name. `--no-install` skips it along with the install.
+- `_github`, `_claude`, `_sandcastle` and `_prettierignore` join the special
+  filename table; `tmp/` is ignored in every template as the agents' scratch
+  space.
+
 ## [0.3.0] - 2026-06-03
 
 A UX-focused release that closes the gap between "scaffold succeeded" and

@@ -1,0 +1,61 @@
+# Dependabot, tuned for the AFK agent queue. One pull request per npm
+# dependency, never a group: Dependabot's grouped-update path writes a lockfile
+# without the root `overrides` block, which fails a frozen install. Each minor
+# and patch pull request merges on its own once CI is green
+# (dependabot-auto-merge.yml); majors wait for a person.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    ignore:
+      # Packages the Expo SDK pins to an exact version or a patch range: only
+      # their patch bumps may flow, since a minor bump of a native module
+      # outside the SDK's range is a build break CI cannot see (Dependabot
+      # reads 0.83 -> 0.87 of react-native as semver-minor). Regenerate the
+      # list from `npx expo install --check` and expo's
+      # bundledNativeModules.json when the SDK changes.
+      - dependency-name: 'expo'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'expo-*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: '@expo/*'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-dom'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-reanimated'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-worklets'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-screens'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-gesture-handler'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-safe-area-context'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-svg'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: 'react-native-mmkv'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      # NativeWind 4 requires Tailwind CSS 3.
+      - dependency-name: 'tailwindcss'
+        update-types: ['version-update:semver-major']
+      # A Next major is a migration, not a bump.
+      - dependency-name: 'next'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    groups:
+      github-actions:
+        patterns: ['*']

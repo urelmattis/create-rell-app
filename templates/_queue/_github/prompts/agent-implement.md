@@ -1,0 +1,22 @@
+# Implement an issue
+
+You are a fresh session on a GitHub-hosted runner. Dependencies are installed. You implement one issue and open one pull request.
+
+## Steps
+
+1. Read the issue and its comments (`gh issue view <number> --comments`), especially the `## Exploration` comment — its approach is your plan unless the code proves it wrong. Read `CLAUDE.md`, `CONTEXT.md`, `docs/agents/*.md`, and the `implement` skill at `.claude/skills/implement/SKILL.md`. Follow that skill.
+2. Create the branch `agent/issue-<number>` from the checked-out `main`.
+3. Work test-first at the seams the exploration named, using the `tdd` skill (`.claude/skills/tdd/SKILL.md`): a failing test, the smallest change that passes it, then tidy. Pure logic belongs in `lib/` (or `packages/shared/`) under vitest; a screen or page change needs a test only where it carries logic a test can pin down.
+4. Before committing, review your own diff along both axes of the `code-review` skill, standards and spec: read `.claude/skills/code-review/SKILL.md` for what each axis checks, then do both passes yourself, one after the other in this session, since the skill's own mechanism is sub-agents and those are denied here. Fix what you find.
+5. Run, and require all three to exit 0: `{{pmRunCmd}} typecheck`, `{{pmRunCmd}} lint`, `{{pmRunCmd}} test`. If one fails for a reason that predates your change, stop and post the failure on the issue with `needs-human` instead of opening a PR.
+6. Stage named paths (`git add <path>`, never `-A`), commit with a conventional message that references the issue (`feat(scope): … (#<number>)`), push the branch, and open the pull request **with the GitHub MCP tool** (`create_pull_request`) so it is authored by the Claude app and the review workflow fires. Title = the issue title; body = what changed, how it was tested, and `Closes #<number>`. Label it `agent-pr`.
+7. Remove `agent-implement` from the issue: `gh issue edit <number> --remove-label agent-implement`.
+
+## Rules
+
+- A change under `.github/workflows/` cannot be pushed from this runner: the workflow token may not modify workflow files, and no permission grants it. Post the diff you would make on the issue with `needs-human` and stop.
+- Schema changes go through Drizzle: edit the schema (`db/schema.ts`, or `packages/shared/db/schema.ts` in a monolith), run `{{pmRunCmd}} db:generate` to write the migration under `db/migrations/`, and commit the schema and the migration together. **Do not** run `db:migrate` or `db:push`: there is no database here. Say so in the PR body and add `needs-human` to the issue so a person applies the migration.
+- Touch only files the change needs. Match the surrounding style. Exact-pinned dependency versions; no new dependency without saying why in the PR body. To change a dependency: edit the `package.json` by hand (adding through the package manager is refused), run `{{pmLockfileOnlyCmd}}` to regenerate the lockfile, then `{{pmCiInstallCmd}}` to install from it, which is what puts the new version into `node_modules` so typecheck sees it. Both are on the allow list; a plain install is not.
+- Never force-push, never merge, never approve.
+- Do all of the work in this session: no sub-agents, and no background work of any kind, including the Bash tool's background option. A headless run ends the moment you stop calling tools, and nothing wakes it, so anything you hand off is lost and the issue keeps its label. Until the pull request is open and the label removed, or step 5 has posted its `needs-human` comment, every message you send is a tool call.
+- Bash is allowlisted per subcommand: each part of a `;`, `&&`, or `|` chain must qualify on its own. Read-only commands (`ls`, `cat`, `grep`, `find`, `head`, `tail`, `wc`, `git log`) and pipes between them run; an unlisted command such as a trailing `echo "EXIT:$?"` or `gh auth status` is refused. A quoted `--body` whose lines start with `#` is rejected before it runs; post issue comments and PR body edits from a here-doc instead (`gh issue comment <number> --body-file - <<'EOF'` … `EOF`; `gh pr edit` takes `--body-file -` too). Redirect targets are checked as file writes, which you may do inside the repository; put scratch output under `tmp/agent/` with the `Write` tool (the path is in `.gitignore`, so no gate reads it; a redirect there fails until the directory exists, and there is no `mkdir` or `rm` here), and stage named paths as step 6 says.

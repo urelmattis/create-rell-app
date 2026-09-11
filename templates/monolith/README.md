@@ -55,13 +55,16 @@ Full-stack monolith scaffolded by [`create-rell-app`](https://github.com/waynewo
 
 ## Useful commands
 
-| Command | Description |
-|---|---|
-| `{{pmRunCmd}} dev:web` | Run the Next.js dev server |
-| `{{pmRunCmd}} dev:mobile` | Run the Expo dev server |
-| `{{pmRunCmd}} build:web` | Build the Next.js production bundle |
-| `{{pmRunCmd}} typecheck` | Typecheck all three workspaces |
-| `{{pmExecCmd}} drizzle-kit generate` | Generate a new Drizzle migration (added in Story 2.4) |
+Run each with `{{pmRunCmd}} <script>`.
+
+| Script        | Description                                          |
+| ------------- | ---------------------------------------------------- |
+| `dev:web`     | Run the Next.js dev server                           |
+| `dev:mobile`  | Run the Expo dev server                              |
+| `build:web`   | Build the Next.js production bundle                  |
+| `typecheck`   | Typecheck all three workspaces                       |
+| `db:generate` | Generate a new Drizzle migration from schema changes |
+| `test`        | Run the vitest suite (passes with no tests yet)      |
 
 ## Notes
 

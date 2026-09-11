@@ -20,6 +20,8 @@ import tseslint from 'typescript-eslint';
 const config = [
   ...next,
   prettier,
+  // The sandcastle runner imports @ai-hero/sandcastle, installed only when used.
+  { ignores: ['.sandcastle'] },
   {
     files: ['**/*.ts', '**/*.tsx'],
     plugins: {

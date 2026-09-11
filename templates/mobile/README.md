@@ -78,16 +78,19 @@ Solo Mobile app scaffolded by [`create-rell-app`](https://github.com/waynewonder
 
 ## Useful commands
 
-| Command | Description |
-|---|---|
-| `{{pmRunCmd}} start` | Run the Expo dev server |
-| `{{pmRunCmd}} ios` | Run on an iOS simulator |
-| `{{pmRunCmd}} android` | Run on an Android emulator |
-| `{{pmRunCmd}} typecheck` | Typecheck the project |
-| `{{pmRunCmd}} lint` | Run ESLint |
-| `{{pmRunCmd}} format` | Run Prettier (write) |
-| `{{pmRunCmd}} db:generate` | Generate a Drizzle migration from schema changes (Node, not mobile) |
-| `{{pmRunCmd}} db:migrate` | Apply pending migrations |
+Run each with `{{pmRunCmd}} <script>`.
+
+| Script        | Description                                                         |
+| ------------- | ------------------------------------------------------------------- |
+| `start`       | Run the Expo dev server                                             |
+| `ios`         | Run on an iOS simulator                                             |
+| `android`     | Run on an Android emulator                                          |
+| `typecheck`   | Typecheck the project                                               |
+| `lint`        | Run ESLint                                                          |
+| `format`      | Run Prettier (write)                                                |
+| `db:generate` | Generate a Drizzle migration from schema changes (Node, not mobile) |
+| `db:migrate`  | Apply pending migrations                                            |
+| `test`        | Run the vitest suite (passes with no tests yet)                     |
 
 ## Notes
 

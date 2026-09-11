@@ -35,8 +35,30 @@ export const TEMPLATES = Object.freeze({
         cmd: 'npm',
         args: Object.freeze(['run', 'typecheck']),
       }),
+      // The same gates the generated ci.yml runs; branch protection requires them.
+      Object.freeze({
+        label: 'format:check',
+        cmd: 'npm',
+        args: Object.freeze(['run', 'format:check']),
+      }),
+      Object.freeze({ label: 'test', cmd: 'npm', args: Object.freeze(['run', 'test']) }),
     ]),
-    requiredFiles: Object.freeze(['package.json', 'README.md', '.env.example', '.gitignore', '.env.local', 'scripts/check-env.mjs']),
+    requiredFiles: Object.freeze([
+      'package.json',
+      'README.md',
+      '.env.example',
+      '.gitignore',
+      '.env.local',
+      'scripts/check-env.mjs',
+      '.github/workflows/ci.yml',
+      '.github/workflows/agent-explore.yml',
+      '.github/dependabot.yml',
+      'CLAUDE.md',
+      'CONTEXT.md',
+      'docs/agents/triage-labels.md',
+      '.claude/settings.json',
+      'scripts/queue-install.sh',
+    ]),
   }),
   mobile: Object.freeze({
     steps: Object.freeze([
@@ -47,8 +69,30 @@ export const TEMPLATES = Object.freeze({
         cmd: 'npm',
         args: Object.freeze(['run', 'typecheck']),
       }),
+      // The same gates the generated ci.yml runs; branch protection requires them.
+      Object.freeze({
+        label: 'format:check',
+        cmd: 'npm',
+        args: Object.freeze(['run', 'format:check']),
+      }),
+      Object.freeze({ label: 'test', cmd: 'npm', args: Object.freeze(['run', 'test']) }),
     ]),
-    requiredFiles: Object.freeze(['package.json', 'README.md', '.env.example', '.gitignore', '.env.local', 'scripts/check-env.mjs']),
+    requiredFiles: Object.freeze([
+      'package.json',
+      'README.md',
+      '.env.example',
+      '.gitignore',
+      '.env.local',
+      'scripts/check-env.mjs',
+      '.github/workflows/ci.yml',
+      '.github/workflows/agent-explore.yml',
+      '.github/dependabot.yml',
+      'CLAUDE.md',
+      'CONTEXT.md',
+      'docs/agents/triage-labels.md',
+      '.claude/settings.json',
+      'scripts/queue-install.sh',
+    ]),
   }),
   monolith: Object.freeze({
     steps: Object.freeze([
@@ -60,6 +104,13 @@ export const TEMPLATES = Object.freeze({
         cmd: 'npm',
         args: Object.freeze(['run', 'typecheck']),
       }),
+      // The same gates the generated ci.yml runs; branch protection requires them.
+      Object.freeze({
+        label: 'format:check',
+        cmd: 'npm',
+        args: Object.freeze(['run', 'format:check']),
+      }),
+      Object.freeze({ label: 'test', cmd: 'npm', args: Object.freeze(['run', 'test']) }),
     ]),
     requiredFiles: Object.freeze([
       'package.json',
@@ -72,6 +123,14 @@ export const TEMPLATES = Object.freeze({
       'apps/mobile/.env.local',
       'apps/web/scripts/check-env.mjs',
       'apps/mobile/scripts/check-env.mjs',
+      '.github/workflows/ci.yml',
+      '.github/workflows/agent-explore.yml',
+      '.github/dependabot.yml',
+      'CLAUDE.md',
+      'CONTEXT.md',
+      'docs/agents/triage-labels.md',
+      '.claude/settings.json',
+      'scripts/queue-install.sh',
     ]),
   }),
 });
