@@ -20,6 +20,7 @@ const EXPECTED_WEB_FILES: ReadonlyArray<string> = [
   'package.json',
   '_tsconfig.json',
   '_gitignore',
+  '_gitattributes',
   '_env.example',
   '_husky/pre-commit',
   'README.md',
