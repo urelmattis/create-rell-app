@@ -41,10 +41,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const svixSignature = req.headers.get('svix-signature');
 
   if (!svixId || !svixTimestamp || !svixSignature) {
-    return NextResponse.json(
-      { error: 'Missing svix headers' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: 'Missing svix headers' }, { status: 400 });
   }
 
   let verifiedEvent: ClerkBillingEvent;

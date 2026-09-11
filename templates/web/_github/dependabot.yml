@@ -1,0 +1,28 @@
+# Dependabot, tuned for the AFK agent queue. One pull request per npm
+# dependency, never a group: Dependabot's grouped-update path writes a lockfile
+# without the root `overrides` block, which fails a frozen install. Each minor
+# and patch pull request merges on its own once CI is green
+# (dependabot-auto-merge.yml); majors wait for a person.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    open-pull-requests-limit: 10
+    ignore:
+      # Tailwind and Next major upgrades are migrations, not bumps.
+      - dependency-name: 'tailwindcss'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'next'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    groups:
+      github-actions:
+        patterns: ['*']

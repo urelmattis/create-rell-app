@@ -226,9 +226,9 @@ describe('assertTargetDirSafe', () => {
       confirm: () => Promise.resolve(false),
     };
 
-    await expect(
-      assertTargetDirSafe(tempRoot, { interactive: true, driver }),
-    ).rejects.toThrow(/aborted/i);
+    await expect(assertTargetDirSafe(tempRoot, { interactive: true, driver })).rejects.toThrow(
+      /aborted/i,
+    );
   });
 
   it('throws ValidationError when target path exists but is a file', async () => {
@@ -244,8 +244,8 @@ describe('assertTargetDirSafe', () => {
       confirm: () => Promise.resolve(true),
     };
 
-    await expect(
-      assertTargetDirSafe(filePath, { interactive: true, driver }),
-    ).rejects.toThrow(/not a directory/);
+    await expect(assertTargetDirSafe(filePath, { interactive: true, driver })).rejects.toThrow(
+      /not a directory/,
+    );
   });
 });

@@ -25,7 +25,8 @@ import 'server-only';
 
 import { cache } from 'react';
 import { auth } from '@clerk/nextjs/server';
-import { getDb, getUserRoleByClerkId, type Role } from '@{{projectNameKebab}}/shared';
+import { getDb, getUserRoleByClerkId } from '@{{projectNameKebab}}/shared';
+import type { Role } from '@{{projectNameKebab}}/shared';
 
 /**
  * Check whether a specific Clerk user currently has the given role.
@@ -36,13 +37,11 @@ import { getDb, getUserRoleByClerkId, type Role } from '@{{projectNameKebab}}/sh
  *
  * Wrapped in React's cache() so duplicate calls within a single render dedupe.
  */
-export const hasRole = cache(
-  async (clerkUserId: string, role: Role): Promise<boolean> => {
-    const row = await getUserRoleByClerkId(getDb(), clerkUserId);
-    const effective = row?.role ?? 'free';
-    return effective === role;
-  },
-);
+export const hasRole = cache(async (clerkUserId: string, role: Role): Promise<boolean> => {
+  const row = await getUserRoleByClerkId(getDb(), clerkUserId);
+  const effective = row?.role ?? 'free';
+  return effective === role;
+});
 
 /**
  * Check whether the currently-signed-in user has the given role. Calls

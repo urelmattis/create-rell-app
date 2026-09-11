@@ -1,0 +1,379 @@
+# Every pull request gets a fresh-session review — never the session that
+# wrote it — along two axes: standards (repo conventions + common smells) and
+# spec (does the diff do what the linked issue asked). It posts one review
+# comment; it never approves or merges. A stronger model than implement.
+# It runs when a PR opens or leaves draft, again when someone adds the
+# `re-review` label (reviewing every push turned one PR into seven rounds),
+# and on dispatch, which is how the address-the-review round asks for its
+# second look: its push raises `synchronize`, which this workflow ignores
+# for reviews on purpose, so the round asks for one by name.
+# A "ready to merge" verdict sets `review-ready`; anything else clears it, and
+# so does a new commit, which also switches auto-merge back off.
+# An agent PR (`agent-pr`) with a "ready to merge" verdict that stays off the
+# protected paths and under the size cap gets auto-merge enabled by a second
+# job with its own write token; it lands when the required checks pass.
+# An agent PR with a "needs changes" verdict gets up to two address-the-review
+# rounds (agent-address.yml); a third such verdict, or a "needs a human
+# decision", puts `needs-human` on the PR. A passed agent PR that no longer
+# merges cleanly gets one merge-main round from the same workflow. A run
+# whose workflow file the action refuses (a pull_request event built from a
+# stale merge ref in the minutes after this file changes on main) dispatches
+# itself again by name. The prompt lives in .github/prompts/.
+name: Agent review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled, synchronize]
+  # The address round dispatches this after its push; a person can too.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to review
+        required: true
+        type: string
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number || inputs.pr }}
+  # Never cancel: an agent-opened PR raises `opened` and `labeled` (agent-pr)
+  # a second apart, and with cancel-in-progress the label run cancelled the
+  # real review and be skipped itself by the job filter.
+  cancel-in-progress: false
+  # Keep every queued run: with the default queue (`single`) a run pending
+  # behind another is cancelled when a third event arrives, which would drop
+  # the review the address round dispatches behind its own push's `stale`
+  # run. GitHub accepts `max`;
+  # actionlint 1.7.12 does not know the key yet and reports it, wrongly.
+  queue: max
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+  checks: read
+  statuses: read
+  id-token: write
+
+jobs:
+  review:
+    # Dependabot runs receive no repository secrets, so there is no API key
+    # to run with; drafts are not ready to be read.
+    if: github.event_name == 'workflow_dispatch' || (github.actor != 'dependabot[bot]' && github.event.pull_request.draft == false && github.event.action != 'synchronize' && (github.event.action != 'labeled' || github.event.label.name == 're-review'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: write
+      checks: read
+      statuses: read
+      id-token: write
+      actions: write
+    outputs:
+      ready: ${{ steps.verdict.outputs.ready }}
+      verdict: ${{ steps.verdict.outputs.verdict }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Note the start time and the pull request's refs
+        # A dispatched run has no pull_request payload, so base and head come
+        # from the API either way; a draft is refused here, where the event
+        # filter above cannot see it.
+        id: start
+        run: |
+          set -euo pipefail
+          echo "at=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+          json=$(gh pr view "$PR" --json state,isDraft,baseRefName,headRefName)
+          if [[ "$(jq -r '.state' <<< "$json")" != "OPEN" || "$(jq -r '.isDraft' <<< "$json")" == "true" ]]; then
+            echo "::error::#$PR is not an open, non-draft pull request"; exit 1
+          fi
+          echo "base=$(jq -r '.baseRefName' <<< "$json")" >> "$GITHUB_OUTPUT"
+          echo "head=$(jq -r '.headRefName' <<< "$json")" >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # An agent PR is opened by the Claude app, so its `opened` event has
+          # the app's bot as the actor; the action rejects it unless named here
+          # ("non-human actor: claude").
+          allowed_bots: github-actions,claude
+          # The transcript goes to the run log. Private repository; without it a
+          # failing run reports only is_error:true and nothing to act on.
+          show_full_output: true
+          prompt: |
+            Follow .github/prompts/agent-review.md exactly. Read that file first.
+            Repository: ${{ github.repository }}. Pull request number: ${{ github.event.pull_request.number || inputs.pr }}.
+            Base: ${{ steps.start.outputs.base }}. Head: ${{ steps.start.outputs.head }}.
+          claude_args: --max-turns 100 --model claude-opus-5
+          # Agent/Task are denied below: a headless run ends the moment the session
+          # stops calling tools, so work handed to background sub-agents never
+          # comes back.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Read",
+                  "Glob",
+                  "Grep",
+                  "Bash(gh pr view *)",
+                  "Bash(gh pr diff *)",
+                  "Bash(gh pr checks *)",
+                  "Bash(gh pr comment *)",
+                  "Bash(gh issue view *)",
+                  "Bash(gh issue list *)",
+                  "Bash(git log *)",
+                  "Bash(git diff *)",
+                  "Bash(git show *)",
+                  "Bash(git blame *)"
+                ],
+                "deny": ["Agent", "Task", "Edit", "Write", "NotebookEdit", "Bash(git push *)", "Bash(gh pr review *)", "Bash(gh pr merge *)"]
+              }
+            }
+
+      - name: Record the verdict
+        # Fails when no review was posted; otherwise mirrors the verdict into
+        # the `review-ready` label and clears `re-review` so it can be re-added.
+        # The verdict is the FIRST bold phrase after the last `### Verdict`
+        # heading, which the review prompt makes the verdict line. Only that
+        # phrase counts: a ready verdict may well explain why it is
+        # "deliberately not another **needs changes**", and a reader that
+        # searched the whole section for the strictest token stopped the
+        # queue on a PR the reviewer had passed. No heading, or no bold
+        # phrase, is `unknown`, which also stops the queue.
+        id: verdict
+        if: ${{ !cancelled() }}
+        env:
+          SINCE: ${{ steps.start.outputs.at }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh pr edit "$PR" --remove-label re-review > /dev/null 2>&1 || true
+          # shellcheck disable=SC2016
+          body=$(gh pr view "$PR" --json comments --jq '[.comments[] | select(.createdAt > $ENV.SINCE and (.body | test("^## Review[ \\t]*\\r?\\n")))] | last | (.body // "")')
+          if [[ -z "$body" ]]; then
+            # The action refuses a workflow file that differs from main's. A
+            # pull_request run in the minutes after this file changes on main
+            # can be built from a stale merge ref and carry the old file (run
+            # (a stale merge ref); a dispatched run reads main's file, so ask
+            # for one by name, once: the dispatched run is not a pull_request
+            # event and cannot come back here.
+            if [[ "${{ github.event_name }}" == "pull_request" ]] && ! git diff --quiet origin/main -- .github/workflows/agent-review.yml; then
+              gh workflow run agent-review.yml -f pr="$PR"
+              echo "::notice::this run's agent-review.yml differs from main's, so the action skipped; the review was dispatched again by name"
+              echo "ready=false" >> "$GITHUB_OUTPUT"
+              echo "verdict=redispatched" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::no review comment was posted after $SINCE ($RUN_URL)"
+            exit 1
+          fi
+          section=$(awk '/^### Verdict/ { buf = ""; on = 1; next } on { buf = buf $0 "\n" } END { printf "%s", buf }' <<< "$body")
+          token=$(grep -o -m1 '\*\*[^*]\{1,80\}\*\*' <<< "$section" | head -n 1 | tr '[:upper:]' '[:lower:]')
+          case "$token" in
+            *"ready to merge"*) verdict=ready ;;
+            *"needs changes"*) verdict=changes ;;
+            *"needs a human"*) verdict=human ;;
+            *) verdict=unknown ;;
+          esac
+          echo "verdict phrase: ${token:-<none>}"
+          echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+          if [[ "$verdict" == "ready" ]]; then
+            gh pr edit "$PR" --add-label review-ready > /dev/null
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "verdict: ready to merge"
+          else
+            gh pr edit "$PR" --remove-label review-ready > /dev/null 2>&1 || true
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "verdict: $verdict"
+          fi
+
+  merge:
+    # Tier 3: the one click a person still made on every agent PR. Runs with
+    # its own write token so the review session above keeps a read-only one.
+    needs: review
+    if: needs.review.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      # Changed lines (additions plus deletions) above this stay with a person.
+      SIZE_CAP: '400'
+    steps:
+      - name: Enable auto-merge for an agent PR that stays off protected paths
+        run: |
+          set -euo pipefail
+          labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")')
+          if [[ " $labels " != *" agent-pr "* ]]; then
+            echo "not an agent PR; merging stays with a person"
+            exit 0
+          fi
+          if [[ " $labels " == *" needs-human "* ]]; then
+            echo "with a person; auto-merge stays off"
+            exit 0
+          fi
+          size=$(gh pr view "$PR" --repo "$REPO" --json additions,deletions --jq '.additions + .deletions')
+          if (( size > SIZE_CAP )); then
+            gh pr comment "$PR" --repo "$REPO" --body "Auto-merge left off: the review said ready to merge, but the diff is $size changed lines and the cap for unattended merges is $SIZE_CAP. A person merges this one." > /dev/null
+            echo "too large ($size lines)"
+            exit 0
+          fi
+          # Paths a person must merge: anything that defines the gates, the
+          # agents, the schema, the dependencies, or the build and infra.
+          blocked=""
+          while IFS= read -r f; do
+            case "$f" in
+              .github/*|.claude/*|docs/agents/*|.husky/*|db/migrations/*|packages/*/db/migrations/*|supabase/*) blocked+="$f"$'\n' ;;
+              CLAUDE.md|CONTEXT.md|package-lock.json|pnpm-lock.yaml|yarn.lock|pnpm-workspace.yaml|.npmrc|.gitignore|.prettierignore|middleware.ts|*/middleware.ts|app.json|*/app.json|app.config.*|*/app.config.*|eas.json|vercel.json) blocked+="$f"$'\n' ;;
+              package.json|*/package.json|eslint.config.*|*/eslint.config.*|tsconfig*.json|*/tsconfig*.json|jest.config.*|*/jest.config.*|vitest.config.*|*/vitest.config.*|next.config.*|*/next.config.*) blocked+="$f"$'\n' ;;
+            esac
+          done < <(gh pr view "$PR" --repo "$REPO" --json files --jq '.files[].path')
+          if [[ -n "$blocked" ]]; then
+            # shellcheck disable=SC2016
+            gh pr comment "$PR" --repo "$REPO" --body "$(printf 'Auto-merge left off: the review said ready to merge, but the diff touches paths a person merges:\n\n```\n%s```' "$blocked")" > /dev/null
+            echo "protected paths touched"
+            exit 0
+          fi
+          # Auto-merge waits forever on a branch that conflicts with main
+          # hand it to one merge-main round first, and
+          # to a person if that round already ran. GitHub computes
+          # mergeability lazily, so UNKNOWN gets a minute to settle.
+          mergeable=$(gh pr view "$PR" --repo "$REPO" --json mergeable --jq '.mergeable')
+          for _ in 1 2 3 4 5 6; do
+            [[ "$mergeable" != "UNKNOWN" ]] && break
+            sleep 10
+            mergeable=$(gh pr view "$PR" --repo "$REPO" --json mergeable --jq '.mergeable')
+          done
+          if [[ "$mergeable" == "CONFLICTING" ]]; then
+            # A round already running for this PR (its display title names
+            # the PR and brief) is neither finished nor to be doubled.
+            inflight=$(gh run list --repo "$REPO" --workflow agent-address.yml --limit 30 --json status,displayTitle --jq "[.[] | select(.status != \"completed\" and .displayTitle == \"merge-main round on #$PR\")] | length")
+            if (( inflight > 0 )); then
+              echo "a merge-main round is in flight; its review follows"
+              exit 0
+            fi
+            labels=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '[.labels[].name] | join(" ")')
+            if [[ " $labels " == *" conflict-round "* ]]; then
+              gh pr edit "$PR" --repo "$REPO" --add-label needs-human > /dev/null
+              gh pr comment "$PR" --repo "$REPO" --body "The review said ready to merge, but the branch conflicts with \`main\` again after its one merge-main round. A person merges \`main\` in; then add \`re-review\`." > /dev/null
+              echo "conflicting after the round; handed to a person"
+              exit 0
+            fi
+            # Auto-merge first: it lands on its own should the conflict clear
+            # before the round's gate runs; the round's own push switches it
+            # off again (stale job) and its re-review re-enables it.
+            gh pr merge "$PR" --repo "$REPO" --auto --squash
+            gh workflow run agent-address.yml --repo "$REPO" -f pr="$PR" -f brief=merge-main
+            gh pr comment "$PR" --repo "$REPO" --body "The review said ready to merge, but the branch conflicts with \`main\`: auto-merge is enabled (it lands on its own if the conflict clears), and one merge-main round was dispatched. If it pushes a merge, a fresh review follows and a ready verdict enables auto-merge as usual; if it cannot resolve the conflict, the PR goes to a person." > /dev/null
+            echo "conflicting; auto-merge enabled and merge-main round dispatched"
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$REPO" --auto --squash
+          gh pr comment "$PR" --repo "$REPO" --body "Auto-merge enabled: the review said ready to merge, the diff stays off the protected paths and is $size changed lines. It lands when the required checks pass; a new commit switches this off again." > /dev/null
+          echo "auto-merge enabled"
+
+  address:
+    # Two rounds, not a loop: a "needs changes" verdict on an agent PR hands
+    # the branch to agent-address.yml, at most twice; `review-addressed` and
+    # `review-addressed-2` mark the rounds. Everything else a review can say
+    # short of "ready" is a person's call, and so is a third "needs changes":
+    # the PR gets `needs-human`.
+    needs: review
+    # A redispatched pseudo-verdict is not a verdict: the dispatched run
+    # brings the real one, and this job must not undo auto-merge for it.
+    if: needs.review.outputs.ready == 'false' && needs.review.outputs.verdict != 'redispatched'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      VERDICT: ${{ needs.review.outputs.verdict }}
+    steps:
+      - name: Hand a needs-changes verdict on an agent PR to one address round
+        run: |
+          set -euo pipefail
+          json=$(gh pr view "$PR" --repo "$REPO" --json labels,headRefName,headRepositoryOwner)
+          labels=$(jq -r '[.labels[].name] | join(" ")' <<< "$json")
+          head=$(jq -r '.headRefName' <<< "$json")
+          owner=$(jq -r '.headRepositoryOwner.login // ""' <<< "$json")
+          if [[ " $labels " != *" agent-pr "* ]]; then
+            echo "not an agent PR; the author answers the review"
+            exit 0
+          fi
+          # A verdict short of ready must also switch off an auto-merge a
+          # previous ready verdict enabled: the review job's token is
+          # read-only for contents, so that undo happens here.
+          gh pr merge "$PR" --repo "$REPO" --disable-auto > /dev/null 2>&1 || true
+          stop() {
+            gh pr edit "$PR" --repo "$REPO" --add-label needs-human > /dev/null
+            gh pr comment "$PR" --repo "$REPO" --body "$1" > /dev/null
+            echo "handed to a person: $2"
+          }
+          case "$VERDICT" in
+            changes) ;;
+            human) stop "The review asks for a person's decision, so the queue stops here. Answer on the PR and add \`re-review\` for another pass." "review says needs a human decision"; exit 0 ;;
+            *) stop "The review's verdict could not be read as ready, needs changes, or needs a human decision, so the queue stops here. Add \`re-review\` for another pass once the review is legible." "verdict $VERDICT"; exit 0 ;;
+          esac
+          if [[ " $labels " == *" review-addressed-2 "* ]]; then
+            stop "Still needs changes after two address-the-review rounds, so the queue stops here. A person decides between the review and the responses; push, then add \`re-review\`." "third needs-changes"
+            exit 0
+          fi
+          case "$head" in
+            agent/*|sandcastle/*) ;;
+            *) stop "The review says needs changes, but $head is not an agent branch, so the round does not run. A person answers the review." "branch $head"; exit 0 ;;
+          esac
+          if [[ "$owner" != "${REPO%%/*}" ]]; then
+            stop "The review says needs changes, but the branch lives in a fork ($owner), which the round cannot push to. A person answers the review." "fork $owner"
+            exit 0
+          fi
+          gh workflow run agent-address.yml --repo "$REPO" -f pr="$PR"
+          echo "dispatched the address round for #$PR"
+
+  stale:
+    # A push after "ready to merge" invalidates the verdict: clear the label,
+    # switch auto-merge off, and say what to do to get it back.
+    if: github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - name: Clear a review that no longer matches the head
+        run: |
+          set -euo pipefail
+          labels=$(gh pr view "$PR" --repo "$REPO" --json labels,autoMergeRequest --jq '([.labels[].name] | join(" ")) + (if .autoMergeRequest then " AUTO" else "" end)')
+          had=""
+          if [[ " $labels " == *" review-ready "* ]]; then gh pr edit "$PR" --repo "$REPO" --remove-label review-ready > /dev/null; had+="review-ready "; fi
+          if [[ " $labels " == *" AUTO"* ]]; then gh pr merge "$PR" --repo "$REPO" --disable-auto > /dev/null; had+="auto-merge "; fi
+          if [[ -n "$had" ]]; then
+            # A queue round pushes as the Claude app and asks for its own
+            # fresh review; only a person's push needs the label hint.
+            if [[ "$ACTOR" == "claude[bot]" || "$ACTOR" == "claude" ]]; then
+              gh pr comment "$PR" --repo "$REPO" --body "New commits from a queue round: cleared ${had}. The round asks for a fresh review itself." > /dev/null
+            else
+              gh pr comment "$PR" --repo "$REPO" --body "New commits since the last review: cleared ${had}. Add the \`re-review\` label for another pass." > /dev/null
+            fi
+            echo "cleared: $had"
+          else
+            echo "nothing to clear"
+          fi

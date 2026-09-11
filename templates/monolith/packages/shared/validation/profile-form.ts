@@ -22,10 +22,7 @@ export const profileFormSchema = z.object({
     .trim()
     .min(2, { message: 'Display name must be at least 2 characters.' })
     .max(60, { message: 'Display name must be 60 characters or fewer.' }),
-  bio: z
-    .string()
-    .trim()
-    .max(280, { message: 'Bio must be 280 characters or fewer.' }),
+  bio: z.string().trim().max(280, { message: 'Bio must be 280 characters or fewer.' }),
   website: z
     .string()
     .trim()

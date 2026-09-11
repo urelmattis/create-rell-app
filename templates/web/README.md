@@ -85,16 +85,19 @@ Solo Web app scaffolded by [`create-rell-app`](https://github.com/waynewonder3/c
 
 ## Useful commands
 
-| Command | Description |
-|---|---|
-| `{{pmRunCmd}} dev` | Run the Next.js dev server |
-| `{{pmRunCmd}} build` | Build the Next.js production bundle |
-| `{{pmRunCmd}} typecheck` | Typecheck the project |
-| `{{pmRunCmd}} lint` | Run ESLint |
-| `{{pmRunCmd}} format` | Run Prettier (write) |
-| `{{pmRunCmd}} db:generate` | Generate a new Drizzle migration from schema changes |
-| `{{pmRunCmd}} db:migrate` | Apply pending migrations |
-| `{{pmRunCmd}} db:studio` | Open Drizzle Studio |
+Run each with `{{pmRunCmd}} <script>`.
+
+| Script        | Description                                          |
+| ------------- | ---------------------------------------------------- |
+| `dev`         | Run the Next.js dev server                           |
+| `build`       | Build the Next.js production bundle                  |
+| `typecheck`   | Typecheck the project                                |
+| `lint`        | Run ESLint                                           |
+| `format`      | Run Prettier (write)                                 |
+| `db:generate` | Generate a new Drizzle migration from schema changes |
+| `db:migrate`  | Apply pending migrations                             |
+| `db:studio`   | Open Drizzle Studio                                  |
+| `test`        | Run the vitest suite (passes with no tests yet)      |
 
 ## Notes
 

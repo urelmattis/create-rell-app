@@ -23,6 +23,9 @@ const EXPECTED_MOBILE_FILES: ReadonlyArray<string> = [
   '_env.example',
   '_husky/pre-commit',
   'README.md',
+  '_github/workflows/ci.yml',
+  '_github/dependabot.yml',
+  'CLAUDE.md',
   'app.json',
   'babel.config.js',
   'metro.config.js',
@@ -191,10 +194,7 @@ describe('templates/mobile static file shape (Story 5.2)', () => {
   });
 
   it('mobile useRole + RoleGate import Role from local ../../db/schema', async () => {
-    const useRoleText = await readFile(
-      join(MOBILE_DIR, 'lib', 'auth', 'use-role.ts'),
-      'utf8',
-    );
+    const useRoleText = await readFile(join(MOBILE_DIR, 'lib', 'auth', 'use-role.ts'), 'utf8');
     expect(useRoleText).toContain("from '../../db/schema'");
 
     const roleGateText = await readFile(
@@ -205,10 +205,7 @@ describe('templates/mobile static file shape (Story 5.2)', () => {
   });
 
   it('mobile ProfileForm imports the shared validation schema via local relative path', async () => {
-    const text = await readFile(
-      join(MOBILE_DIR, 'components', 'forms', 'ProfileForm.tsx'),
-      'utf8',
-    );
+    const text = await readFile(join(MOBILE_DIR, 'components', 'forms', 'ProfileForm.tsx'), 'utf8');
     expect(text).toContain("from '../../lib/validation/profile-form'");
     expect(text).toContain('profileFormSchema');
   });
@@ -311,10 +308,7 @@ describe('templates/mobile static file shape (Story 5.2)', () => {
     await walk(MOBILE_DIR);
 
     const offenders: string[] = [];
-    const deprecatedPatterns = [
-      /template:\s*['"]supabase['"]/,
-      /getToken\s*\(\s*\{\s*template:/,
-    ];
+    const deprecatedPatterns = [/template:\s*['"]supabase['"]/, /getToken\s*\(\s*\{\s*template:/];
     for (const file of filesToCheck) {
       const text = await readFile(file, 'utf8');
       for (const pattern of deprecatedPatterns) {

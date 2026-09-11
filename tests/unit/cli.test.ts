@@ -160,9 +160,10 @@ describe('runCli (action handler)', () => {
     rmSync(legacyTempRoot, { recursive: true, force: true });
   });
 
-  function makeRecordingDriver(
-    selectAnswers: string[] = [],
-  ): { driver: PromptDriver; selectCallCount: { count: number } } {
+  function makeRecordingDriver(selectAnswers: string[] = []): {
+    driver: PromptDriver;
+    selectCallCount: { count: number };
+  } {
     const queue = [...selectAnswers];
     const selectCallCount = { count: 0 };
     const driver: PromptDriver = {
@@ -286,9 +287,9 @@ describe('runCli (action handler)', () => {
     }) as never);
 
     try {
-      await expect(
-        runCli('my-project', {}, driver, { interactive: false }),
-      ).rejects.toThrow('process.exit:1');
+      await expect(runCli('my-project', {}, driver, { interactive: false })).rejects.toThrow(
+        'process.exit:1',
+      );
       expect(errSpy).toHaveBeenCalled();
     } finally {
       exitSpy.mockRestore();
@@ -392,16 +393,56 @@ describe('runCli scaffold integration', () => {
     expect(output).toContain(targetDir);
   });
 
+  it('layers the _queue bundle on the template by default, and skips it with addQueue: false', async () => {
+    const templatesDir = join(tempRoot, 'templates');
+    await mkdir(join(templatesDir, 'web'), { recursive: true });
+    await writeFile(join(templatesDir, 'web', 'placeholder.txt'), 'hi', 'utf8');
+    await mkdir(join(templatesDir, '_queue'), { recursive: true });
+    await writeFile(join(templatesDir, '_queue', 'CONTEXT.md'), '# {{projectName}}', 'utf8');
+
+    const run = async (addQueue: boolean | undefined) => {
+      const targetDir = join(tempRoot, `app-${String(addQueue)}`);
+      const calls: string[] = [];
+      await runCli(
+        'my-app',
+        { template: 'web', pm: 'npm' },
+        {
+          driver: quietDriver(),
+          gatherOptions: { interactive: true },
+          templatesDir,
+          targetDirOverride: targetDir,
+          scaffoldRunner: async (templateDir, target) => {
+            calls.push(templateDir);
+            await mkdir(target, { recursive: true });
+            return { filesWritten: 1, targetDir: target };
+          },
+          installDeps: false,
+          gitRunner: noopGitRunner,
+          ...(addQueue === undefined ? {} : { addQueue }),
+        },
+      );
+      return calls;
+    };
+
+    const byDefault = await run(undefined);
+    expect(byDefault).toEqual([join(templatesDir, 'web'), join(templatesDir, '_queue')]);
+
+    const without = await run(false);
+    expect(without).toEqual([join(templatesDir, 'web')]);
+    const output = logSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n');
+    expect(output).toContain('skipping the agent queue');
+  });
+
   it('runs the install runner exactly once when installDeps is true (default)', async () => {
     const templatesDir = join(tempRoot, 'templates');
     await mkdir(join(templatesDir, 'web'), { recursive: true });
     await writeFile(join(templatesDir, 'web', 'placeholder.txt'), 'hi', 'utf8');
     const targetDir = join(tempRoot, 'my-app');
 
-    const installCalls: Array<{ command: string; cwd: string }> = [];
+    const installCalls: Array<{ command: string; args: readonly string[]; cwd: string }> = [];
     const installRunner: ProcessRunner = {
-      run(command, _args, options) {
-        installCalls.push({ command, cwd: options.cwd });
+      run(command, args, options) {
+        installCalls.push({ command, args, cwd: options.cwd });
         return Promise.resolve();
       },
     };
@@ -427,9 +468,14 @@ describe('runCli scaffold integration', () => {
       },
     );
 
-    expect(installCalls).toHaveLength(1);
-    expect(installCalls[0]?.command).toBe('pnpm');
+    // Install once, then the project's own `format` script (Prettier is
+    // installed by then), so the tree is clean for this project name.
+    expect(installCalls.map((c) => [c.command, ...c.args])).toEqual([
+      ['pnpm', 'install'],
+      ['pnpm', 'run', 'format'],
+    ]);
     expect(installCalls[0]?.cwd).toBe(targetDir);
+    expect(installCalls[1]?.cwd).toBe(targetDir);
 
     // Success-path banner should include the "next steps" message.
     const output = logSpy.mock.calls.map((c: unknown[]) => c.join(' ')).join('\n');

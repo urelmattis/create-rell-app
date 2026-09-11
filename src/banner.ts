@@ -40,15 +40,17 @@ export function buildNextStepsLines(
   resolved: ResolvedInputs,
   targetDir: string,
   cwd: string = process.cwd(),
+  options: { withQueue?: boolean } = {},
 ): string[] {
   const cmds = getPackageManagerCommands(resolved.pm);
   const dev = resolveDevCommand(resolved.template, resolved.pm);
   const absolute = platformResolve(targetDir);
-  const relative = absolute === cwd || absolute.startsWith(cwd + platformSep)
-    ? './' + posixPath.relative(cwd, absolute).split(/[\\/]/).join('/')
-    : absolute;
+  const relative =
+    absolute === cwd || absolute.startsWith(cwd + platformSep)
+      ? './' + posixPath.relative(cwd, absolute).split(/[\\/]/).join('/')
+      : absolute;
 
-  return [
+  const lines = [
     `Success! Created ${resolved.projectName} at ${targetDir}`,
     '',
     'Next steps:',
@@ -56,6 +58,13 @@ export function buildNextStepsLines(
     `  1. Fill in .env.local        → ${cmds.run} check-env   (shows what's missing + where to get it)`,
     `  2. ${cmds.run} db:migrate       (apply database migrations)`,
     `  3. ${dev}              (start the dev server)`,
-    '',
   ];
+  if (options.withQueue ?? true) {
+    lines.push(
+      `  4. gh repo create && git push -u origin main, then bash scripts/queue-install.sh`,
+      `     (labels, branch protection, auto-merge; then the AFK agent queue runs on every issue)`,
+    );
+  }
+  lines.push('');
+  return lines;
 }

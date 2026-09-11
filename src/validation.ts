@@ -17,10 +17,7 @@ import { readdir, stat } from 'node:fs/promises';
 
 import type { PackageManagerName, TemplateName } from './index.ts';
 import type { PromptDriver } from './prompts.ts';
-import {
-  PACKAGE_MANAGER_CHOICES,
-  TEMPLATE_CHOICES,
-} from './prompts.ts';
+import { PACKAGE_MANAGER_CHOICES, TEMPLATE_CHOICES } from './prompts.ts';
 
 /**
  * Discriminated-union result for validation functions. Tests pattern-match
@@ -168,9 +165,7 @@ export async function assertTargetDirSafe(
   }
 
   if (!targetStat.isDirectory()) {
-    throw new ValidationError(
-      `Target path already exists and is not a directory: ${targetDir}`,
-    );
+    throw new ValidationError(`Target path already exists and is not a directory: ${targetDir}`);
   }
 
   const entries = await readdir(targetDir);

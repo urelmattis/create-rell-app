@@ -33,6 +33,20 @@ export interface PackageManagerCommands {
   readonly exec: string;
   /** Lock file name, e.g. `package-lock.json`. */
   readonly lockFile: string;
+  /** Reproducible install from the lock file, as CI runs it, e.g. `npm ci`. */
+  readonly ci: string;
+  /** Regenerate the lock file from the manifests without installing. */
+  readonly lockfileOnly: string;
+  /** Value for `actions/setup-node`'s `cache:` input. */
+  readonly nodeCache: string;
+  /** Vulnerability audit over the installed tree, e.g. `npm audit`. */
+  readonly audit: string;
+  /** Why is a package installed, e.g. `npm ls <package>`. */
+  readonly why: string;
+  /** Add a dev dependency: `npm install -D`, `pnpm add -D`, `yarn add -D`. */
+  readonly addDev: string;
+  /** Run a locally installed bin (`npx`, `pnpm exec`, `yarn`); `exec` downloads instead. */
+  readonly execLocal: string;
 }
 
 /**
@@ -40,13 +54,22 @@ export interface PackageManagerCommands {
  * truth for everything CLI-related — adding a new package manager requires
  * exactly one new entry here.
  */
-export const PACKAGE_MANAGER_COMMANDS: Readonly<Record<PackageManagerName, PackageManagerCommands>> = {
+export const PACKAGE_MANAGER_COMMANDS: Readonly<
+  Record<PackageManagerName, PackageManagerCommands>
+> = {
   npm: {
     install: 'npm install',
     installArgv: { binary: 'npm', args: ['install'] },
     run: 'npm run',
     exec: 'npx',
     lockFile: 'package-lock.json',
+    ci: 'npm ci',
+    lockfileOnly: 'npm install --package-lock-only',
+    nodeCache: 'npm',
+    audit: 'npm audit --audit-level=moderate',
+    why: 'npm ls',
+    addDev: 'npm install -D',
+    execLocal: 'npx',
   },
   pnpm: {
     install: 'pnpm install',
@@ -54,6 +77,13 @@ export const PACKAGE_MANAGER_COMMANDS: Readonly<Record<PackageManagerName, Packa
     run: 'pnpm run',
     exec: 'pnpm dlx',
     lockFile: 'pnpm-lock.yaml',
+    ci: 'pnpm install --frozen-lockfile',
+    lockfileOnly: 'pnpm install --lockfile-only',
+    nodeCache: 'pnpm',
+    audit: 'pnpm audit --audit-level moderate',
+    why: 'pnpm why -r',
+    addDev: 'pnpm add -D',
+    execLocal: 'pnpm exec',
   },
   yarn: {
     install: 'yarn install',
@@ -61,6 +91,13 @@ export const PACKAGE_MANAGER_COMMANDS: Readonly<Record<PackageManagerName, Packa
     run: 'yarn run',
     exec: 'yarn dlx',
     lockFile: 'yarn.lock',
+    ci: 'yarn install --immutable',
+    lockfileOnly: 'yarn install --mode update-lockfile',
+    nodeCache: 'yarn',
+    audit: 'yarn npm audit --all --recursive --severity moderate',
+    why: 'yarn why',
+    addDev: 'yarn add -D',
+    execLocal: 'yarn',
   },
 };
 
@@ -122,10 +159,9 @@ export const defaultProcessRunner: ProcessRunner = {
           { cause: err },
         );
       }
-      throw new InstallFailedError(
-        `Subprocess '${command} ${args.join(' ')}' failed.`,
-        { cause: err },
-      );
+      throw new InstallFailedError(`Subprocess '${command} ${args.join(' ')}' failed.`, {
+        cause: err,
+      });
     }
   },
 };
@@ -163,6 +199,25 @@ export async function installDependencies(
 }
 
 /**
+ * Run the generated project's own `format` script (Prettier, with the
+ * project's config) after a successful install. Template files are formatted
+ * for a typical project name, but a very short or very long name changes
+ * where Prettier wraps the lines that carry it (imports of the monolith's
+ * shared package, the tsconfig path map), and the CI `check` job the agent
+ * queue waits on runs `format:check` over the whole tree. Formatting once
+ * here, before the first commit, makes that job green for any name.
+ */
+export async function formatProject(
+  targetDir: string,
+  pm: PackageManagerName,
+  runner: ProcessRunner = defaultProcessRunner,
+): Promise<void> {
+  const [binary, ...args] = getPackageManagerCommands(pm).run.split(' ');
+  if (!binary) throw new Error(`no run command for package manager ${pm}`);
+  await runner.run(binary, [...args, 'format'], { cwd: targetDir });
+}
+
+/**
  * Remove every lock file from `targetDir` that does not match the chosen
  * package manager's lock file. Idempotent — silently ignores missing files.
  *
@@ -170,10 +225,7 @@ export async function installDependencies(
  * package manager (left in the template, copied during scaffold) doesn't
  * confuse the chosen one.
  */
-export async function cleanupLockFiles(
-  targetDir: string,
-  pm: PackageManagerName,
-): Promise<void> {
+export async function cleanupLockFiles(targetDir: string, pm: PackageManagerName): Promise<void> {
   const keep = getPackageManagerCommands(pm).lockFile;
   const allLockFiles = Object.values(PACKAGE_MANAGER_COMMANDS).map((c) => c.lockFile);
 

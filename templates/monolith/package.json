@@ -2,7 +2,10 @@
   "name": "{{projectName}}",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -11,7 +14,7 @@
     "dev:mobile": "cd apps/mobile && {{pmRunCmd}} start",
     "build:web": "cd apps/web && {{pmRunCmd}} build",
     "typecheck": "tsc -b apps/web apps/mobile packages/shared --noEmit",
-    "lint": "cd apps/web && {{pmRunCmd}} lint",
+    "lint": "cd apps/web && {{pmRunCmd}} lint && cd ../mobile && {{pmRunCmd}} lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
@@ -19,7 +22,8 @@
     "db:migrate": "cd packages/shared && {{pmRunCmd}} db:migrate",
     "db:push": "cd packages/shared && {{pmRunCmd}} db:push",
     "db:studio": "cd packages/shared && {{pmRunCmd}} db:studio",
-    "check-env": "cd apps/web && {{pmRunCmd}} check-env && cd ../mobile && {{pmRunCmd}} check-env"
+    "check-env": "cd apps/web && {{pmRunCmd}} check-env && cd ../mobile && {{pmRunCmd}} check-env",
+    "test": "cd apps/web && {{pmRunCmd}} test && cd ../mobile && {{pmRunCmd}} test"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
@@ -40,7 +44,11 @@
     "tabWidth": 2
   },
   "lint-staged": {
-    "*.{ts,tsx}": ["prettier --write"],
-    "*.{js,jsx,mjs,cjs,json,css,md}": ["prettier --write"]
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{js,jsx,mjs,cjs,json,css,md}": [
+      "prettier --write"
+    ]
   }
 }

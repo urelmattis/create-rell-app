@@ -39,19 +39,19 @@ describe('TEMPLATES matrix', () => {
 
   it('web runs lint and typecheck after install (no next build — requires env vars)', () => {
     const labels = TEMPLATES.web.steps.map((s) => s.label);
-    expect(labels).toEqual(['install', 'lint', 'typecheck']);
+    expect(labels).toEqual(['install', 'lint', 'typecheck', 'format:check', 'test']);
     expect(labels).not.toContain('build');
   });
 
   it('mobile runs lint and typecheck after install (Expo has no build script)', () => {
     const labels = TEMPLATES.mobile.steps.map((s) => s.label);
-    expect(labels).toEqual(['install', 'lint', 'typecheck']);
+    expect(labels).toEqual(['install', 'lint', 'typecheck', 'format:check', 'test']);
     expect(labels).not.toContain('build');
   });
 
   it('monolith runs lint and typecheck after install (no build:web — requires env vars)', () => {
     const labels = TEMPLATES.monolith.steps.map((s) => s.label);
-    expect(labels).toEqual(['install', 'lint', 'typecheck']);
+    expect(labels).toEqual(['install', 'lint', 'typecheck', 'format:check', 'test']);
     expect(labels).not.toContain('build');
   });
 

@@ -37,6 +37,8 @@ export default [
       '.expo',
       'dist',
       'build',
+      // The sandcastle runner imports @ai-hero/sandcastle, installed only when used.
+      '.sandcastle',
       'babel.config.js',
       'metro.config.js',
       'tailwind.config.js',

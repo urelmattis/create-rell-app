@@ -1,0 +1,296 @@
+# Queue step 3b: one bounded round on an agent PR's own branch, in one of two
+# briefs. `review` (the default): the review workflow dispatches it when its
+# verdict is "needs changes" and no round has run yet; a fresh Claude session
+# takes the review's items that are defects or in scope, declines the rest
+# with a reason, pushes one commit, and posts a `## Review response`; a
+# second such round runs when the re-review still says needs changes.
+# `merge-main`: the review's merge job (or daily housekeeping) dispatches it
+# when a PR the review passed no longer merges cleanly; the session merges
+# `main` in, resolves the conflicts keeping both sides' intent, pushes the
+# merge commit, and posts a `## Merge response`. The review brief runs at most
+# twice per PR (`review-addressed`, then `review-addressed-2`), merge-main
+# once (`conflict-round`). The push must go out with the Claude
+# app's token, so that GitHub raises `synchronize` and runs CI on the new
+# head: the checkout below keeps no credential of its own, because the
+# action's swap looks for an `include.path` entry while actions/checkout@v6
+# stores its token under `includeIf.gitdir:`; with the workflow token left
+# in place the push is the workflow bot's, and GitHub holds every run for
+# that head until a person approves it.
+# The review job itself ignores `synchronize` on purpose, so the last step
+# dispatches the review explicitly. `review-addressed` marks the round;
+# a second "needs changes" after it goes to a person. The prompt lives in
+# .github/prompts/.
+name: Agent address review
+# The display title names the PR and the brief, so the review's merge job and
+# the daily housekeeping can see a round in flight and leave it alone.
+run-name: ${{ inputs.brief || 'review' }} round on #${{ inputs.pr }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number (an open agent PR)
+        required: true
+        type: string
+      brief:
+        description: review = answer a needs-changes verdict; merge-main = resolve a conflict with main
+        required: false
+        default: review
+        type: choice
+        options:
+          - review
+          - merge-main
+
+concurrency:
+  group: agent-address-${{ inputs.pr }}
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  id-token: write
+
+jobs:
+  address:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ inputs.pr }}
+      BRIEF: ${{ inputs.brief || 'review' }}
+    steps:
+      - name: Read the pull request and gate the round
+        # Only an open agent PR on an agent/* or sandcastle/* branch of this
+        # repository that has not had this brief's round yet: for `review`,
+        # its last review must say needs changes; for `merge-main`, GitHub
+        # must report it conflicting. Anything else is a person's, and the
+        # run fails so the reason is in the log rather than in a silent skip.
+        id: pr
+        run: |
+          set -euo pipefail
+          json=$(gh pr view "$PR" --repo "$REPO" --json state,isDraft,labels,headRefName,headRefOid,headRepositoryOwner,body,comments,mergeable)
+          state=$(jq -r '.state' <<< "$json")
+          draft=$(jq -r '.isDraft' <<< "$json")
+          labels=$(jq -r '[.labels[].name] | join(" ")' <<< "$json")
+          head=$(jq -r '.headRefName' <<< "$json")
+          sha=$(jq -r '.headRefOid' <<< "$json")
+          owner=$(jq -r '.headRepositoryOwner.login // ""' <<< "$json")
+          if [[ "$state" != "OPEN" || "$draft" == "true" ]]; then
+            echo "::error::#$PR is $state (draft: $draft); nothing to address"; exit 1
+          fi
+          if [[ " $labels " != *" agent-pr "* ]]; then
+            echo "::error::#$PR is not an agent PR; a person answers its review"; exit 1
+          fi
+          # The branch name is rendered into the session's settings JSON
+          # below, so it is bounded to the charset the queue's branches use.
+          if [[ ! "$head" =~ ^(agent|sandcastle)/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::#$PR's branch $head is not an agent branch"; exit 1
+          fi
+          if [[ "$owner" != "${REPO%%/*}" ]]; then
+            echo "::error::#$PR comes from a fork ($owner); this runner cannot push to it"; exit 1
+          fi
+          case "$BRIEF" in
+            review)
+              # Up to two rounds: the first is marked review-addressed, the
+              # second review-addressed-2; a PR wearing the second is a
+              # person's (two rounds took the reviewer's items and it still
+              # disagrees, or the items were never the kind a round can take).
+              if [[ " $labels " == *" review-addressed-2 "* ]]; then
+                echo "::error::#$PR already had its two address-the-review rounds; a person decides"; exit 1
+              elif [[ " $labels " == *" review-addressed "* ]]; then
+                mark=review-addressed-2; round=2
+              else
+                mark=review-addressed; round=1
+              fi
+              heading="## Review response"; prompt=agent-address.md ;;
+            merge-main)
+              if [[ " $labels " == *" conflict-round "* ]]; then
+                echo "::error::#$PR already had its merge-main round (conflict-round); a person decides"; exit 1
+              fi
+              mark=conflict-round; round=1; heading="## Merge response"; prompt=agent-merge-main.md ;;
+            *) echo "::error::unknown brief '$BRIEF'"; exit 1 ;;
+          esac
+          if [[ "$BRIEF" == "review" ]]; then
+            # The same reading as the review workflow's "Record the verdict":
+            # the first bold phrase after the last `### Verdict` heading, and
+            # nothing else in the section.
+            section=$(jq -r '[.comments[] | select(.body | test("^## Review[ \\t]*\\r?\\n"))] | last | (.body // "") | split("### Verdict") | if length > 1 then last else "" end' <<< "$json")
+            token=$(grep -o -m1 '\*\*[^*]\{1,80\}\*\*' <<< "$section" | head -n 1 | tr '[:upper:]' '[:lower:]')
+            if [[ "$token" != *"needs changes"* ]]; then
+              echo "::error::the last review on #$PR says '${token:-<no verdict>}', not needs changes; nothing to address"; exit 1
+            fi
+          else
+            # GitHub computes mergeability lazily; UNKNOWN means not yet.
+            mergeable=$(jq -r '.mergeable' <<< "$json")
+            for _ in 1 2 3 4 5 6; do
+              [[ "$mergeable" != "UNKNOWN" ]] && break
+              sleep 10
+              mergeable=$(gh pr view "$PR" --repo "$REPO" --json mergeable --jq '.mergeable')
+            done
+            if [[ "$mergeable" != "CONFLICTING" ]]; then
+              # The conflict cleared (or GitHub is still computing) since the
+              # dispatch. Ask for the review by name so its merge job re-runs
+              # its own checks and enables auto-merge; a person's manual
+              # dispatch on an unvetted PR gets the same treatment.
+              gh workflow run agent-review.yml --repo "$REPO" -f pr="$PR"
+              gh pr comment "$PR" --repo "$REPO" --body "The merge-main round found this branch $mergeable, not conflicting, so it did nothing; a fresh review was dispatched so auto-merge can be enabled." > /dev/null
+              echo "::error::#$PR is $mergeable, not conflicting; nothing to merge, review re-dispatched"; exit 1
+            fi
+          fi
+          issue=$(jq -r '.body' <<< "$json" | grep -oiE '(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved) #[0-9]+' | head -n 1 | grep -oE '[0-9]+' || true)
+          {
+            echo "head=$head"
+            echo "sha=$sha"
+            echo "issue=${issue:-none}"
+            echo "mark=$mark"
+            echo "round=$round"
+            echo "heading=$heading"
+            echo "prompt=$prompt"
+            echo "at=$(date -u +%FT%TZ)"
+          } >> "$GITHUB_OUTPUT"
+          echo "#$PR ($BRIEF, round $round): branch $head at ${sha:0:8}, issue ${issue:-none}"
+
+      - name: Mark the round
+        # Before the session runs, so a run that dies half-way still counts as
+        # the one round of this brief: the next time the same condition comes
+        # up, a person decides. A label added with the workflow token raises
+        # no event.
+        run: gh pr edit "$PR" --repo "$REPO" --add-label "${{ steps.pr.outputs.mark }}" > /dev/null
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.head }}
+          fetch-depth: 0
+          # See the header: the app token the action sets on the remote must
+          # be the only credential git can find, or the push is the workflow
+          # bot's and its runs are held for approval.
+          persist-credentials: false
+
+{{pmSetupSteps}}
+
+      - name: Install dependencies
+        run: {{pmCiInstallCmd}}
+
+      - name: Compose the session's settings for this brief
+        # One allow list, rendered per brief: the only push is the exact
+        # branch; `review` may not merge, check out, or install anything;
+        # `merge-main` may merge origin/main, take main's copy of a file it
+        # did not set out to change, stage a removal, regenerate the lockfile
+        # from merged package.json files, and refresh the install so the
+        # checks run against the merged tree. Deny rules win over allow
+        # rules, so the checkout and install denies are `review`-only
+        # entries. Written to a file the action reads.
+        id: settings
+        env:
+          HEAD: ${{ steps.pr.outputs.head }}
+        run: |
+          set -euo pipefail
+          allow='["Read","Glob","Grep","Edit","Write","Bash({{pmRunCmd}} typecheck)","Bash({{pmRunCmd}} lint)","Bash({{pmRunCmd}} test)","Bash({{pmRunCmd}} test *)","Bash({{pmRunCmd}} format)","Bash({{pmRunCmd}} format:check)","Bash({{pmRunCmd}} db:generate)","Bash(git status *)","Bash(git diff *)","Bash(git log *)","Bash(git show *)","Bash(git ls-files *)","Bash(git add *)","Bash(git commit *)","Bash(gh pr view *)","Bash(gh pr diff *)","Bash(gh pr checks *)","Bash(gh pr comment *)","Bash(gh issue view *)"]'
+          deny='["Agent","Task","Bash(git push --force*)","Bash(git push -f *)","Bash(git rebase *)","Bash(git reset *)","Bash(git switch *)","Bash(git checkout -b *)","Bash(gh pr create *)","Bash(gh pr edit *)","Bash(gh pr merge *)","Bash(gh pr review *)"]'
+          case "$BRIEF" in
+            review)
+              extra_allow='[]'
+              extra_deny='["Bash(git merge *)","Bash(git checkout *)"]' ;;
+            merge-main)
+              extra_allow='["Bash(git merge origin/main)","Bash(git merge --abort)","Bash(git checkout --theirs *)","Bash(git rm *)","Bash({{pmLockfileOnlyCmd}})","Bash({{pmCiInstallCmd}})"]'
+              extra_deny='["Bash(git checkout main)","Bash(git checkout origin/*)","Bash(git checkout --ours *)"]' ;;
+          esac
+          jq -n --argjson a "$allow" --argjson ea "$extra_allow" --arg push "Bash(git push origin $HEAD)" --argjson d "$deny" --argjson ed "$extra_deny" \
+            '{ permissions: { allow: ($a + $ea + [$push]), deny: ($d + $ed) } }' > "$RUNNER_TEMP/claude-settings.json"
+          echo "path=$RUNNER_TEMP/claude-settings.json" >> "$GITHUB_OUTPUT"
+          jq -c '.permissions' "$RUNNER_TEMP/claude-settings.json"
+
+      - uses: anthropics/claude-code-action@v1
+        # A step timeout, not only the job's: a session that pushes and then
+        # stalls must fail this step so the assert below still runs and hands
+        # the branch on; a job timeout cancels the assert with it.
+        timeout-minutes: 45
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Dispatched by the review workflow, so the workflow token's bot is
+          # the actor; the action rejects it unless listed here.
+          allowed_bots: github-actions
+          # The transcript goes to the run log. Private repository; without it a
+          # failing run reports only is_error:true and nothing to act on.
+          show_full_output: true
+          prompt: |
+            Follow .github/prompts/${{ steps.pr.outputs.prompt }} exactly. Read that file first.
+            Repository: ${{ github.repository }}. Pull request number: ${{ inputs.pr }}.
+            Branch (checked out, push here): ${{ steps.pr.outputs.head }}. Linked issue: ${{ steps.pr.outputs.issue }}. Round: ${{ steps.pr.outputs.round }}.
+          claude_args: --max-turns 100 --model claude-sonnet-5
+          # Agent/Task are denied in the settings: a headless run ends the moment
+          # the session stops calling tools, so work handed to background
+          # sub-agents never comes back.
+          settings: ${{ steps.settings.outputs.path }}
+
+      - name: Assert the round landed, then hand the branch back to review
+        # Judge by GitHub state, not the action's exit code. A response comment
+        # is required either way; a new head means something was pushed, so a
+        # fresh review is dispatched (the app-token push raised `synchronize`,
+        # which runs CI and the review's `stale` job but not the review itself).
+        # No new head means the round took nothing, or could not resolve the
+        # conflict: a person decides. A merge-main push that still conflicts
+        # is a person's too.
+        # Only once the gate passed: a refused gate must touch nothing on the
+        # PR, while a failed install on an eligible PR (already marked with
+        # this brief's label) still gets its needs-human note here.
+        if: ${{ !cancelled() && steps.pr.outcome == 'success' }}
+        env:
+          SINCE: ${{ steps.pr.outputs.at }}
+          BEFORE: ${{ steps.pr.outputs.sha }}
+          MARK: ${{ steps.pr.outputs.mark }}
+          HEADING: ${{ steps.pr.outputs.heading }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016
+          response=$(gh pr view "$PR" --repo "$REPO" --json comments --jq '[.comments[] | select(.createdAt > $ENV.SINCE and (.body | startswith($ENV.HEADING)))] | last | (.body // "")')
+          now=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid')
+          if [[ -z "$response" ]]; then
+            gh pr edit "$PR" --repo "$REPO" --add-label needs-human > /dev/null
+            if [[ "$now" != "$BEFORE" ]]; then
+              # Pushed, then stalled: the commit is real and unreviewed.
+              body="The $BRIEF round pushed ${now:0:8} (was ${BEFORE:0:8}) but ended without a \`$HEADING\`: $RUN_URL. No fresh review was dispatched. A person checks the pushed commit; then add \`re-review\`."
+            else
+              body="The $BRIEF round ended without a \`$HEADING\` and pushed nothing: $RUN_URL. A person takes it from here; remove \`$MARK\` and dispatch \`agent-address.yml\` with brief \`$BRIEF\` to try the round again."
+            fi
+            gh pr comment "$PR" --repo "$REPO" --body "$body" > /dev/null
+            echo "::error::round ended without a response comment"
+            exit 1
+          fi
+          if [[ "$BRIEF" == "merge-main" && "$now" != "$BEFORE" ]]; then
+            mergeable=UNKNOWN
+            for _ in 1 2 3 4 5 6; do
+              mergeable=$(gh pr view "$PR" --repo "$REPO" --json mergeable --jq '.mergeable')
+              [[ "$mergeable" != "UNKNOWN" ]] && break
+              sleep 10
+            done
+            if [[ "$mergeable" == "CONFLICTING" ]]; then
+              gh pr edit "$PR" --repo "$REPO" --add-label needs-human > /dev/null
+              gh pr comment "$PR" --repo "$REPO" --body "The merge-main round pushed ${now:0:8}, but GitHub still reports the branch conflicting with \`main\`. A person merges \`main\` in; then add \`re-review\`." > /dev/null
+              echo "::error::still conflicting after the round's push"
+              exit 1
+            fi
+          fi
+          if [[ "$now" != "$BEFORE" ]]; then
+            # Belt and braces: should GitHub still hold the head's runs for
+            # approval, release them, or auto-merge can never see green.
+            sleep 20
+            held=$(gh api "repos/$REPO/actions/runs?head_sha=$now&event=pull_request&per_page=20" --jq '.workflow_runs[] | select(.conclusion == "action_required") | .id')
+            for id in $held; do
+              gh api -X POST "repos/$REPO/actions/runs/$id/approve" > /dev/null && echo "approved held run $id"
+            done
+            gh workflow run agent-review.yml --repo "$REPO" -f pr="$PR"
+            echo "pushed ${BEFORE:0:8} -> ${now:0:8}; re-review dispatched"
+            exit 0
+          fi
+          gh pr edit "$PR" --repo "$REPO" --add-label needs-human > /dev/null
+          if [[ "$BRIEF" == "merge-main" ]]; then
+            gh pr comment "$PR" --repo "$REPO" --body "The merge-main round did not push a merge (its reasons are in the \`## Merge response\` above). A person merges \`main\` in; then add \`re-review\`." > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "The address-the-review round took none of the review's items (its reasons are in the \`## Review response\` above), so nothing was pushed and no re-review runs. A person decides between the review and the response." > /dev/null
+          fi
+          echo "nothing pushed; handed to a person"

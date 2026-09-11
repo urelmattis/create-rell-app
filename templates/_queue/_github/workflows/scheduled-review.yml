@@ -1,0 +1,103 @@
+# Monday 06:00 America/New_York. GitHub's cron is UTC with no time-zone
+# field, so this is 10:00 UTC — 06:00 EDT, 05:00 EST; the winter hour is
+# accepted rather than maintained twice a year.
+#
+# Each run reviews the whole source tree; when the repository outgrows one
+# session, split it into slices here and pick one by ISO week number. It
+# changes no code: findings become issues labeled `security` + `needs-triage`.
+# The prompt lives in .github/prompts/.
+name: Scheduled security review
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: scheduled-review
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  id-token: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+{{pmSetupSteps}}
+
+      - name: Install (for the dependency audit)
+        run: {{pmCiInstallCmd}}
+
+      - name: Note the start time
+        id: start
+        run: echo "at=$(date -u +%FT%TZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Pick this week's slice
+        id: slice
+        # One slice: every top-level directory git tracks except the generated
+        # and vendored trees. When the tree outgrows one session, list slices
+        # here and pick one with `$(( 10#$(date -u +%V) % N ))`.
+        run: |
+          set -euo pipefail
+          dirs=$(git ls-files | grep / | cut -d/ -f1 | sort -u | grep -v -x -E '\.github|\.claude|\.husky|\.sandcastle|docs|scripts' | tr '\n' ' ')
+          dirs=${dirs% }
+          echo "dirs=${dirs:-.}" >> "$GITHUB_OUTPUT"
+          echo "slice: ${dirs:-.}"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The transcript goes to the run log. Private repository; without it a
+          # failing run reports only is_error:true and nothing to act on.
+          show_full_output: true
+          prompt: |
+            Follow .github/prompts/scheduled-review.md exactly. Read that file first.
+            Repository: ${{ github.repository }}. Directories in this run's slice: ${{ steps.slice.outputs.dirs }}.
+          claude_args: --max-turns 60 --model claude-sonnet-5
+          # Agent/Task are denied below: a headless run ends the moment the session
+          # stops calling tools, so work handed to background sub-agents never
+          # comes back.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Read",
+                  "Glob",
+                  "Grep",
+                  "Bash({{pmAuditCmd}})",
+                  "Bash({{pmAuditCmd}} *)",
+                  "Bash({{pmWhyCmd}} *)",
+                  "Bash(gh issue list *)",
+                  "Bash(gh issue view *)",
+                  "Bash(gh issue create *)",
+                  "Bash(git log *)"
+                ],
+                "deny": ["Agent", "Task", "Edit", "Write", "NotebookEdit", "Bash(git push *)", "Bash(gh pr *)"]
+              }
+            }
+
+      - name: Explore what the sweep filed
+        # Issues created with the workflow token raise no `opened` event, so
+        # the explore workflow is dispatched for each one by hand.
+        if: ${{ !cancelled() }}
+        env:
+          SINCE: ${{ steps.start.outputs.at }}
+        run: |
+          set -euo pipefail
+          # $ENV.SINCE is jq's, read from the environment, so the single quotes are right.
+          # shellcheck disable=SC2016
+          for n in $(gh issue list --label security --state open --limit 100 --json number,createdAt --jq '.[] | select(.createdAt > $ENV.SINCE) | .number'); do
+            gh workflow run agent-explore.yml -f issue="$n"
+            echo "dispatched explore for #$n"
+          done

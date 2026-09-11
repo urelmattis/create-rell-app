@@ -10,9 +10,8 @@ export default function SettingsPage() {
       <h1>Profile settings</h1>
       <p>
         Example React Hook Form + Zod wiring. The schema lives in{' '}
-        <code>lib/validation/profile-form.ts</code> — a single source of
-        truth the form, any server action, and any API route can all
-        validate against.
+        <code>lib/validation/profile-form.ts</code> — a single source of truth the form, any server
+        action, and any API route can all validate against.
       </p>
       <ProfileForm />
     </section>

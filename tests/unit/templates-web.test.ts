@@ -23,6 +23,9 @@ const EXPECTED_WEB_FILES: ReadonlyArray<string> = [
   '_env.example',
   '_husky/pre-commit',
   'README.md',
+  '_github/workflows/ci.yml',
+  '_github/dependabot.yml',
+  'CLAUDE.md',
   'next.config.ts',
   'next-env.d.ts',
   'postcss.config.mjs',
@@ -223,10 +226,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('current-user + roles helpers wrap their exports in React cache() for per-render dedupe', async () => {
-    const currentUser = await readFile(
-      join(WEB_DIR, 'lib', 'auth', 'current-user.ts'),
-      'utf8',
-    );
+    const currentUser = await readFile(join(WEB_DIR, 'lib', 'auth', 'current-user.ts'), 'utf8');
     const roles = await readFile(join(WEB_DIR, 'lib', 'auth', 'roles.ts'), 'utf8');
 
     // Both files must pull React's cache() helper and actually invoke it.
@@ -255,10 +255,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('ProfileForm does not ship a raw console.log — uses a dev-only warn instead', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'components', 'forms', 'ProfileForm.tsx'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'components', 'forms', 'ProfileForm.tsx'), 'utf8');
     expect(text).not.toMatch(/console\.log\s*\(/);
     expect(text).toContain("process.env.NODE_ENV !== 'production'");
     expect(text).toContain("console.warn('[ProfileForm] onSubmit not wired");
@@ -282,10 +279,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('ProfileForm imports the shared validation schema via @/lib/validation/profile-form', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'components', 'forms', 'ProfileForm.tsx'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'components', 'forms', 'ProfileForm.tsx'), 'utf8');
     expect(text).toContain("from '@/lib/validation/profile-form'");
     expect(text).toContain('profileFormSchema');
   });
@@ -333,10 +327,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('event-handler.ts user.created case uses insertDefaultUserRole (not setUserRole)', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'), 'utf8');
     // Extract the user.created case block so we don't match setUserRole
     // references from the subscription.* cases.
     const match = text.match(/case 'user\.created':[\s\S]*?(?=case '|default:)/);
@@ -348,20 +339,14 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('event-handler.ts imports insertDefaultUserRole and markWebhookSeen from @/db/queries', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'), 'utf8');
     expect(text).toContain('insertDefaultUserRole');
     expect(text).toContain('markWebhookSeen');
     expect(text).toContain("from '@/db/queries'");
   });
 
   it('event-handler.ts accepts an optional svixId and short-circuits replays', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'lib', 'billing', 'event-handler.ts'), 'utf8');
     expect(text).toMatch(/handleBillingEvent\(\s*[\s\S]*event:[\s\S]*svixId\?:\s*string/);
     expect(text).toContain('markWebhookSeen(db, svixId, event.type)');
   });
@@ -375,10 +360,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
   });
 
   it('db/migrations/0000_initial.sql preserves RLS policies + auth.jwt sub', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'db', 'migrations', '0000_initial.sql'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'db', 'migrations', '0000_initial.sql'), 'utf8');
     expect(text).toContain('ENABLE ROW LEVEL SECURITY');
     expect(text).toContain("auth.jwt()->>'sub'");
     expect(text).toContain('select_user_roles_own');
@@ -448,10 +430,7 @@ describe('templates/web static file shape (Story 5.1)', () => {
     await walk(WEB_DIR);
 
     const offenders: string[] = [];
-    const deprecatedPatterns = [
-      /template:\s*['"]supabase['"]/,
-      /getToken\s*\(\s*\{\s*template:/,
-    ];
+    const deprecatedPatterns = [/template:\s*['"]supabase['"]/, /getToken\s*\(\s*\{\s*template:/];
     for (const file of filesToCheck) {
       const text = await readFile(file, 'utf8');
       for (const pattern of deprecatedPatterns) {
@@ -482,10 +461,7 @@ describe('templates/web security hardening', () => {
   });
 
   it('app/api/me/role/route.ts imports rateLimit and sets Cache-Control on success', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'app', 'api', 'me', 'role', 'route.ts'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'app', 'api', 'me', 'role', 'route.ts'), 'utf8');
     expect(text).toContain("from '@/lib/rate-limit'");
     expect(text).toContain('rateLimit(');
     expect(text).toContain('Retry-After');
@@ -514,12 +490,9 @@ describe('templates/web security hardening', () => {
   });
 
   it('lib/billing/plan-to-role.ts sanitizes the unknown-plan log output', async () => {
-    const text = await readFile(
-      join(WEB_DIR, 'lib', 'billing', 'plan-to-role.ts'),
-      'utf8',
-    );
+    const text = await readFile(join(WEB_DIR, 'lib', 'billing', 'plan-to-role.ts'), 'utf8');
     expect(text).toContain('safeKey');
-    expect(text).toContain(".slice(0, 40)");
+    expect(text).toContain('.slice(0, 40)');
     // The raw planKey must not be passed directly into console.warn anymore.
     expect(text).not.toMatch(/console\.warn\([^)]*planKey\s*\)/);
   });

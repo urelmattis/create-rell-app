@@ -1,0 +1,127 @@
+# Queue step 1: every new issue, or one a human labels `agent-explore`, gets
+# a fresh Claude session that reads the issue and the codebase, changes
+# nothing, posts a verdict comment, and swaps the label for `explored`. A
+# `trivial` or `ready` verdict dispatches the implement workflow on its own;
+# `needs-human` and `already-fixed` wait for a person. Issues opened with the
+# workflow token (the Monday sweep) raise no `opened` event, so those
+# workflows dispatch this one directly. The prompt lives in .github/prompts/.
+name: Agent explore
+
+on:
+  issues:
+    types: [opened, labeled]
+  # Manual trigger for smoke-testing the queue without flipping a label.
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Issue number to explore
+        required: true
+        type: string
+
+concurrency:
+  group: agent-explore-${{ github.event.issue.number || inputs.issue }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+  id-token: write
+
+jobs:
+  explore:
+    if: github.event.action == 'opened' || github.event_name == 'workflow_dispatch' || github.event.label.name == 'agent-explore'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Mark the issue as being explored
+        # A new or dispatched issue carries no label yet; the prompt swaps
+        # `agent-explore` for `explored`, so put it there first. A label added
+        # with the workflow token raises no event, so this cannot re-trigger.
+        if: github.event.action != 'labeled'
+        env:
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: gh issue edit "$ISSUE" --add-label agent-explore > /dev/null
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # A run dispatched by another workflow has the workflow token's bot
+          # as its actor, which the action rejects unless listed here.
+          allowed_bots: github-actions
+          # The transcript goes to the run log. Private repository; without it a
+          # failing run reports only is_error:true and nothing to act on.
+          show_full_output: true
+          prompt: |
+            Follow .github/prompts/agent-explore.md exactly. Read that file first.
+            Repository: ${{ github.repository }}. Issue number: ${{ github.event.issue.number || inputs.issue }}.
+          claude_args: --max-turns 60 --model claude-sonnet-5
+          # Agent/Task are denied below: a headless run ends the moment the session
+          # stops calling tools, so work handed to background sub-agents never
+          # comes back.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Read",
+                  "Glob",
+                  "Grep",
+                  "Bash(gh issue view *)",
+                  "Bash(gh issue comment *)",
+                  "Bash(gh issue edit *)",
+                  "Bash(gh issue list *)",
+                  "Bash(git log *)",
+                  "Bash(git diff *)",
+                  "Bash(git blame *)"
+                ],
+                "deny": ["Agent", "Task", "Edit", "Write", "NotebookEdit", "Bash(git push *)", "Bash(gh pr *)"]
+              }
+            }
+
+      - name: Assert the verdict landed
+        # The action can report success with nothing on the issue (a session
+        # that stops calling tools ends quietly). Judge by the issue instead.
+        if: ${{ !cancelled() }}
+        id: verdict
+        env:
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          labels=$(gh issue view "$ISSUE" --json labels --jq '[.labels[].name] | join(" ")')
+          verdict=$(gh issue view "$ISSUE" --json comments --jq '[.comments[] | select(.body | startswith("## Exploration"))] | last | (.body // "") | capture("\\*\\*Verdict:\\*\\* (?<v>[a-z-]+)") | .v' 2>/dev/null || true)
+          if [[ " $labels " == *" explored "* && " $labels " != *" agent-explore "* && -n "$verdict" ]]; then
+            echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
+            echo "verdict: $verdict"
+            exit 0
+          fi
+          gh issue edit "$ISSUE" --add-label needs-human > /dev/null
+          gh issue edit "$ISSUE" --remove-label agent-explore > /dev/null 2>&1 || true
+          gh issue comment "$ISSUE" --body "The explore run ended without a verdict on this issue: $RUN_URL. Labels were: ${labels:-none}. Re-add \`agent-explore\` to retry once the cause is fixed." > /dev/null
+          echo "::error::explore run ended without a verdict"
+          exit 1
+
+      - name: Promote a ready verdict
+        # A workflow_dispatch from the workflow token does start a run (the
+        # one exception to the no-recursion rule), so this hands the issue to
+        # implement without a person adding the label.
+        if: steps.verdict.outputs.verdict == 'trivial' || steps.verdict.outputs.verdict == 'ready'
+        env:
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: |
+          if gh pr list --head "agent/issue-$ISSUE" --state all --json number --jq '.[0].number // empty' | grep -q .; then
+            echo "::notice::#$ISSUE already has a pull request from agent/issue-$ISSUE; not dispatching implement again"
+            exit 0
+          fi
+          if gh api "repos/${{ github.repository }}/branches/agent/issue-$ISSUE" > /dev/null 2>&1; then
+            echo "::notice::branch agent/issue-$ISSUE already exists; not dispatching implement again"
+            exit 0
+          fi
+          gh workflow run agent-implement.yml -f issue="$ISSUE"
+          echo "dispatched implement for #$ISSUE (verdict: ${{ steps.verdict.outputs.verdict }})"
