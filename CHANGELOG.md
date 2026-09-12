@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-12
+
+The first release of the agent queue to reach npm. 0.4.0 was tagged but its
+publish was rejected by npm's provenance check: the repository had moved from
+`Novgn` to `urelmattis` and `package.json` still named the old owner. 0.4.1 is
+0.4.0 with the package metadata pointing at the moved repository.
+
+### Fixed
+
+- `repository`, `homepage` and `bugs` in `package.json` name the repository's
+  current owner, which npm provenance compares against the publishing
+  workflow.
+
 ## [0.4.0] - 2026-09-12
+
+Tagged, never published (see 0.4.1).
+
 
 Every scaffold now ships the AFK agent queue: Claude Code on GitHub Actions
 takes an issue from open to merged, with CI, Dependabot and the docs the agents
