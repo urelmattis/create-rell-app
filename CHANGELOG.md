@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-12
+
+Every scaffold now ships the AFK agent queue: Claude Code on GitHub Actions
+takes an issue from open to merged, with CI, Dependabot and the docs the agents
+read configured per template. Formatting is now guaranteed clean on every
+platform and for every project name.
+
 ### Fixed
 
 - **Windows checkouts no longer fail `format:check`.** A `.gitattributes`
