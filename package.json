@@ -1,6 +1,6 @@
 {
   "name": "create-rell-app",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Scaffold a fully wired Clerk + Supabase + Drizzle starter app (web, mobile, or full-stack monolith) in one command.",
   "keywords": [
     "clerk",
