@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Windows checkouts no longer fail `format:check`.** A `.gitattributes`
+  (`* text=auto eol=lf`) at the repository root keeps the templates LF on a
+  Windows checkout, where Git would otherwise convert them to CRLF and every
+  generated file would fail Prettier's `endOfLine: lf`; each template ships
+  the same file so generated projects are safe from the same conversion.
 - Template sources are now Prettier-clean under the templates' own config,
   and the smoke test runs `format:check` and `test` after lint and typecheck,
   the same gates the generated `ci.yml` requires.

@@ -169,6 +169,10 @@ describe('renameSpecialFiles', () => {
     expect(renameSpecialFiles('_gitignore')).toBe('.gitignore');
   });
 
+  it('renames _gitattributes to .gitattributes', () => {
+    expect(renameSpecialFiles('_gitattributes')).toBe('.gitattributes');
+  });
+
   it('renames _npmrc to .npmrc', () => {
     expect(renameSpecialFiles('_npmrc')).toBe('.npmrc');
   });

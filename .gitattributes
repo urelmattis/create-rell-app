@@ -1,0 +1,18 @@
+# Check out every text file with LF endings on every platform. The generated
+# projects run `prettier --check` (endOfLine: lf) over the whole tree, and Git
+# for Windows would otherwise convert the templates to CRLF on checkout.
+* text=auto eol=lf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.gz binary

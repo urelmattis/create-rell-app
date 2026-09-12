@@ -24,6 +24,7 @@ const EXPECTED_TEMPLATE_FILES: ReadonlyArray<string> = [
   'package.json',
   'tsconfig.base.json',
   '_gitignore',
+  '_gitattributes',
   'README.md',
   '_github/workflows/ci.yml',
   '_github/dependabot.yml',

@@ -78,6 +78,7 @@ export const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
  */
 const SPECIAL_FILENAME_RENAMES: ReadonlyMap<string, string> = new Map([
   ['_gitignore', '.gitignore'],
+  ['_gitattributes', '.gitattributes'],
   ['_npmrc', '.npmrc'],
   ['_env.example', '.env.example'],
   ['_env.local', '.env.local'],
